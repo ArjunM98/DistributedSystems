@@ -1,6 +1,7 @@
 .idea
 .vscode
 .DS_Store
+*.iml
 
 # Compiled class file
 *.class
@@ -31,3 +32,11 @@ out/
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
+
+```
+# Required to share dependencies when using ant
+!libs/*jar
+```
+
+# Ignore manifests
+*.MF
