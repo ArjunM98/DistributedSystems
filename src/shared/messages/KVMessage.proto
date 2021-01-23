@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package shared.messages;
+
+option java_package = "shared.messages";
+option java_outer_classname = "ProtoKVMessage";
+
+/* Defining the message format */
+message KVProto {
+  uint32 statusMsg = 1;
+  string keyMsg = 2;
+  string valueMsg = 3;
+  uint64 idMsg = 4;
+}
