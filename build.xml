@@ -115,6 +115,14 @@
     </junit>
   </target>
 
+  <target name="testAdditional" depends="build">
+    <junit>
+      <classpath refid="project.classpath" />
+      <formatter type="brief" usefile="false" />
+      <test name="testing.AdditionalTest" />
+    </junit>
+  </target>
+
   <target name="run" >
     <java classname="${main.class}" classpathref="class.path"/>
   </target>

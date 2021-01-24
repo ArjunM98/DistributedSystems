@@ -47,6 +47,8 @@ public class KVMessageProto implements KVMessage {
         return msg.getValueMsg();
     }
 
+    public long getId() { return msg.getIdMsg(); }
+
     /**
      * Serializes message and writes it to output stream.
      *
@@ -62,5 +64,7 @@ public class KVMessageProto implements KVMessage {
     public String getMessageString() {
         return msg.toString();
     }
+
+    public boolean validKVProto() { return msg != null; }
 
 }
