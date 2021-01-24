@@ -15,7 +15,9 @@ public class AllTests {
     static {
         try {
             new LogSetup("logs/testing/test.log", Level.ERROR);
-            new KVServer(50000, 10, "FIFO");
+            // TODO fix this so we can test server without having to start a thread ourself
+            Thread server = new Thread(new KVServer(50000, 10, "FIFO"));
+            server.start();
         } catch (IOException e) {
             e.printStackTrace();
         }
