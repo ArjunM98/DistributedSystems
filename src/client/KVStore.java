@@ -1,5 +1,6 @@
 package client;
 
+import org.apache.log4j.Logger;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
@@ -9,6 +10,7 @@ import java.io.OutputStream;
 import java.net.Socket;
 
 public class KVStore implements KVCommInterface {
+    private static final Logger logger = Logger.getRootLogger();
 
     private final String addr;
     private final int portNum;
@@ -47,8 +49,7 @@ public class KVStore implements KVCommInterface {
         try {
             tearDownConnection();
         } catch (IOException e) {
-            // TODO: replace with logger
-            System.out.println(e);
+            logger.error("Error disconnecting from session", e);
         }
     }
 

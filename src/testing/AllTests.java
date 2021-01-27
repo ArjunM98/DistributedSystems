@@ -1,13 +1,12 @@
 package testing;
 
-import java.io.IOException;
-
-import org.apache.log4j.Level;
-
 import app_kvServer.KVServer;
 import junit.framework.Test;
 import junit.framework.TestSuite;
 import logger.LogSetup;
+import org.apache.log4j.Level;
+
+import java.io.IOException;
 
 
 public class AllTests {
@@ -15,9 +14,7 @@ public class AllTests {
     static {
         try {
             new LogSetup("logs/testing/test.log", Level.ERROR);
-            // TODO fix this so we can test server without having to start a thread ourself
-            Thread server = new Thread(new KVServer(50000, 10, "FIFO"));
-            server.start();
+            new KVServer(50000, 10, "FIFO").start();
         } catch (IOException e) {
             e.printStackTrace();
         }

@@ -1,13 +1,13 @@
 package app_kvServer;
 
-import java.io.InputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.Socket;
-
+import org.apache.log4j.Logger;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
-import shared.messages.ProtoKVMessage;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.Socket;
 
 
 /**
@@ -18,22 +18,19 @@ import shared.messages.ProtoKVMessage;
  * is received it is going to be echoed back to the client.
  */
 public class ClientConnection implements Runnable {
+    private static final Logger logger = Logger.getRootLogger();
 
-    private final Socket clientSocket;
+    private final Socket clientSocket; // TODO: consider potential hanging problem
     private final KVServer server;
-    private boolean isOpen;
-
-    private InputStream input;
-    private OutputStream output;
 
     /**
      * Constructs a new CientConnection object for a given TCP socket.
+     *
      * @param clientSocket the Socket object for the client connection.
      */
     public ClientConnection(Socket clientSocket, KVServer server) {
         this.server = server;
         this.clientSocket = clientSocket;
-        this.isOpen = true;
     }
 
     /**
@@ -41,53 +38,35 @@ public class ClientConnection implements Runnable {
      * Loops until the connection is closed or aborted by the client.
      */
     public void run() {
-        try {
-            output = clientSocket.getOutputStream();
-            input = clientSocket.getInputStream();
-
-            while(isOpen) {
-                try {
-                    respondToRequest();
-
-                    /* connection either terminated by the client or lost due to
-                     * network problems*/
-                } catch (IOException ioe) {
-                    isOpen = false;
+        try (clientSocket; InputStream input = clientSocket.getInputStream(); OutputStream output = clientSocket.getOutputStream()) {
+            while (true) try {
+                KVMessageProto request = new KVMessageProto(input);
+                if (request.validKVProto()) {
+                    logger.debug("Responding to request " + request.getId());
+                    respondToRequest(request, output);
+                } else {
+                    logger.debug("Bad request " + request);
                 }
+            } catch (IOException e) {
+                // connection either terminated by the client or lost due to network problems
+                logger.info("Client disconnected: " + e.getMessage());
+                break;
             }
-
-        } catch (IOException ioe) {
-            // TODO Put in appropriate logger
-            System.out.println(ioe);
-        } finally {
-
-            try {
-                if (clientSocket != null) {
-                    input.close();
-                    output.close();
-                    clientSocket.close();
-                }
-            } catch (IOException ioe) {
-                // TODO Put in appropriate logger
-                System.out.println("Error! Unable to tear down connection!");
-            }
+        } catch (IOException e) {
+            logger.info("Unable to stream to/from socket", e);
         }
     }
 
     /**
      * Method receive a KVMessage using this socket.
+     *
      * @throws IOException some I/O error regarding the input stream
      */
-    private void respondToRequest() throws IOException {
+    private void respondToRequest(KVMessageProto req, OutputStream output) throws IOException {
         // TODO Implement parsing based on message status and better error handling
-        KVMessageProto req = new KVMessageProto(input);
         KVMessageProto res;
 
-        if (!req.validKVProto()) {
-            return;
-        }
-
-        switch(req.getStatus()) {
+        switch (req.getStatus()) {
             case GET:
                 res = new KVMessageProto(KVMessage.StatusType.GET_SUCCESS, req.getKey(), req.getValue(), req.getId());
                 break;
@@ -100,6 +79,4 @@ public class ClientConnection implements Runnable {
 
         res.writeMessageTo(output);
     }
-
-
 }
