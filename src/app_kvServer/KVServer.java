@@ -1,20 +1,30 @@
 package app_kvServer;
 
-import shared.messages.KVMessage;
-import shared.messages.KVMessageProto;
+import logger.LogSetup;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
+import shared.ObjectFactory;
 
 import java.io.IOException;
-import java.net.BindException;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.net.*;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class KVServer extends Thread implements IKVServer {
+    private static final Logger logger = Logger.getRootLogger();
 
-    private int port;
-    private long cacheSize;
-    private String strategy;
+    private final int port;
+    private final int cacheSize;
+    private final CacheStrategy cacheStrategy;
+
+    private final ExecutorService threadPool;
     private ServerSocket serverSocket;
-    private boolean running;
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     /**
      * Start KV Server at given port
@@ -28,112 +38,214 @@ public class KVServer extends Thread implements IKVServer {
      *                  and "LFU".
      */
     public KVServer(int port, int cacheSize, String strategy) {
+        CacheStrategy cacheStrategy;
+        try {
+            cacheStrategy = CacheStrategy.valueOf(strategy);
+        } catch (IllegalArgumentException e) {
+            logger.warn("Defaulting to no cache", e);
+            cacheStrategy = CacheStrategy.None;
+        }
         // TODO - finish implementation (mock KVServer basics)
         this.port = port;
         this.cacheSize = cacheSize;
-        this.strategy = strategy;
+        this.cacheStrategy = cacheStrategy;
+        this.threadPool = Executors.newCachedThreadPool();
     }
 
     @Override
     public int getPort() {
-        // TODO Auto-generated method stub
-        return -1;
+        return port;
     }
 
     @Override
     public String getHostname() {
-        // TODO Auto-generated method stub
-        return null;
+        if (serverSocket == null) try {
+            return InetAddress.getLocalHost().getHostName();
+        } catch (UnknownHostException e) {
+            logger.error("Unknown host: try starting the server first", e);
+        }
+        return serverSocket.getInetAddress().getHostName();
     }
 
     @Override
     public CacheStrategy getCacheStrategy() {
-        // TODO Auto-generated method stub
-        return IKVServer.CacheStrategy.None;
+        return cacheStrategy;
     }
 
     @Override
     public int getCacheSize() {
-        // TODO Auto-generated method stub
-        return -1;
+        return cacheSize;
     }
 
     @Override
     public boolean inStorage(String key) {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.inStorage(String) not implemented");
         return false;
     }
 
     @Override
     public boolean inCache(String key) {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.inCache(String) not implemented");
         return false;
     }
 
     @Override
     public String getKV(String key) throws Exception {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.getKV(String) not implemented");
         return "";
     }
 
     @Override
     public void putKV(String key, String value) throws Exception {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.putKV(String, String) not implemented");
     }
 
     @Override
     public void clearCache() {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.clearCache() not implemented");
     }
 
     @Override
     public void clearStorage() {
         // TODO Auto-generated method stub
+        logger.warn("KVServer.clearStorage() not implemented");
     }
 
     @Override
     public void run() {
-        // TODO Mock implementation of run() for tester
-
-        running = initializeServer();
-
-        if (serverSocket != null) {
-            while (isRunning()) {
-                try {
-                    Socket client = serverSocket.accept();
-                    ClientConnection connection = new ClientConnection(client, this /* reference to server process */);
-                    new Thread(connection).start();
-                } catch (IOException e) {
-                    System.out.println("Error!");
-                }
+        logger.info("Initializing server...");
+        try {
+            serverSocket = new ServerSocket(port);
+            logger.info("Bound to port " + port);
+            this.isRunning.set(true);
+        } catch (IOException e) {
+            logger.error("Error! Cannot open server socket:");
+            if (e instanceof BindException) {
+                logger.error("Port " + port + " is already bound!");
             }
         }
+
+        logger.debug("kvServer.getCacheSize() = " + this.getCacheSize());
+        logger.debug("kvServer.getCacheStrategy() = " + this.getCacheStrategy());
+        logger.debug("kvServer.getHostname() = " + this.getHostname());
+        logger.debug("kvServer.getPort() = " + this.getPort());
+
+        while (this.isRunning.get()) {
+            try {
+                Socket client = serverSocket.accept();
+                logger.debug("New client:" + client);
+                threadPool.execute(new ClientConnection(client, this /* reference to server process */));
+            } catch (IOException e) {
+                logger.error("Socket error", e);
+            } catch (RejectedExecutionException e) {
+                logger.error("Client rejected", e);
+            }
+        }
+        logger.info("Server exiting...");
     }
 
     @Override
     public void kill() {
-        // TODO Auto-generated method stub
+        this.isRunning.set(false);
+        try {
+            List<Runnable> awaitingClients = threadPool.shutdownNow();
+            logger.warn(String.format("%d clients were active", awaitingClients.size()));
+        } catch (Exception e) {
+            logger.error("Unable to cleanly terminate threads", e);
+        }
+
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            logger.error("Unable to cleanly terminate socket", e);
+        }
+
+        this.clearCache();
     }
 
     @Override
     public void close() {
-        // TODO Auto-generated method stub
-    }
+        final long TIMEOUT_MILLIS = 5000L; // how long to wait for threads to cleanup
 
-    private boolean initializeServer() {
+        this.isRunning.set(false);
         try {
-            serverSocket = new ServerSocket(port);
-            return true;
-        } catch (IOException e) {
-            if (e instanceof BindException) {
-                // TODO replace with logger
-                System.out.println("Port " + port + " is already bound!");
-            }
-            return false;
+            threadPool.shutdown();
+            if (!threadPool.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS))
+                logger.warn("Some clients may still be active (termination wait timeout)");
+        } catch (Exception e) {
+            logger.error("Unable to cleanly terminate", e);
         }
+
+        try {
+            serverSocket.close();
+        } catch (IOException e) {
+            logger.error("Unable to cleanly terminate socket", e);
+        }
+
+        this.clearCache();
     }
 
-    private boolean isRunning() {
-        return running;
+    /**
+     * Main entry point for the KVServer application.
+     *
+     * @param args contains [portNumber [, cacheSize, policy, logLevel]]
+     */
+    public static void main(String[] args) {
+        int portNumber, cacheSize = 10;
+        String policy = "FIFO";
+        Level logLevel = Level.ALL;
+
+        // 1. Validate args
+        try {
+            switch (args.length) {
+                case 4:
+                    String candidateLevel = args[3].toUpperCase();
+                    if (!LogSetup.isValidLevel(candidateLevel))
+                        throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
+                    logLevel = Level.toLevel(candidateLevel, Level.ALL);
+                case 3:
+                    String candidatePolicy = args[2].toUpperCase();
+                    if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
+                        throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
+                    policy = candidatePolicy;
+                case 2:
+                    try {
+                        cacheSize = Integer.parseInt(args[1]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
+                    }
+                case 1:
+                    try {
+                        portNumber = Integer.parseInt(args[0]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid port number '%s'", args[0]));
+                    }
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid number of arguments");
+            }
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e);
+            System.err.println("Usage: Server <port> [<cachesize> <cachepolicy> <loglevel>]");
+            System.exit(1);
+            return;
+        }
+
+        // 2. Initialize logger
+        try {
+            new LogSetup("logs/server.log", logLevel);
+        } catch (IOException e) {
+            System.err.println("Logger error: " + e);
+            System.exit(1);
+            return;
+        }
+
+        // 3. Run server on main thread
+        ObjectFactory.createKVServerObject(portNumber, cacheSize, policy).run();
     }
 }
