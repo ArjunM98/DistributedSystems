@@ -3,8 +3,8 @@
 
   <property environment="env"/>
   <property name="debuglevel" value="source,lines,vars"/>
-  <property name="target" value="1.7"/>
-  <property name="source" value="1.7"/>
+  <property name="target" value="11"/>
+  <property name="source" value="11"/>
 
   <property name="build.dir"     value="bin"/>
   <property name="src.dir"       value="src"/>

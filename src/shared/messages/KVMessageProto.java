@@ -3,8 +3,9 @@ package shared.messages;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.IOException;
+import java.util.Objects;
 
-import shared.messages.ProtoKVMessage.KVProto;
+import shared.messages.proto.ProtoKVMessage.KVProto;
 
 public class KVMessageProto implements KVMessage {
 
@@ -31,8 +32,8 @@ public class KVMessageProto implements KVMessage {
      *
      * @param in - Input Stream.
      */
-    public KVMessageProto(InputStream in) throws IOException {
-        msg = KVProto.parseDelimitedFrom(in);
+    public KVMessageProto(InputStream in) throws IOException, NullPointerException {
+        msg = Objects.requireNonNull(KVProto.parseDelimitedFrom(in));
     }
 
     public StatusType getStatus() {
@@ -64,7 +65,5 @@ public class KVMessageProto implements KVMessage {
     public String getMessageString() {
         return msg.toString();
     }
-
-    public boolean validKVProto() { return msg != null; }
 
 }
