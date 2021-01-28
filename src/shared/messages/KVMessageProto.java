@@ -66,4 +66,6 @@ public class KVMessageProto implements KVMessage {
         return msg.toString();
     }
 
+    public byte[] getByteRepresentation() { return msg.toByteArray(); }
+
 }
