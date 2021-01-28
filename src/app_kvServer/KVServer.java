@@ -245,7 +245,9 @@ public class KVServer extends Thread implements IKVServer {
             return;
         }
 
-        // 3. Run server on main thread
-        ObjectFactory.createKVServerObject(portNumber, cacheSize, policy).run();
+        // 3. Run server and respond to ctrl-c and kill
+        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, cacheSize, policy);
+        kvServer.start();
+        Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 }

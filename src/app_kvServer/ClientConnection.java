@@ -41,13 +41,9 @@ public class ClientConnection implements Runnable {
         try (clientSocket; InputStream input = clientSocket.getInputStream(); OutputStream output = clientSocket.getOutputStream()) {
             while (true) try {
                 KVMessageProto request = new KVMessageProto(input);
-                if (request.validKVProto()) {
-                    logger.debug("Responding to request " + request.getId());
-                    respondToRequest(request, output);
-                } else {
-                    logger.debug("Bad request " + request);
-                }
-            } catch (IOException e) {
+                logger.debug("Responding to request " + request.getId());
+                respondToRequest(request, output);
+            } catch (IOException | NullPointerException e) {
                 // connection either terminated by the client or lost due to network problems
                 logger.info("Client disconnected: " + e.getMessage());
                 break;
