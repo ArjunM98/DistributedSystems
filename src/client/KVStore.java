@@ -21,8 +21,8 @@ public class KVStore implements KVCommInterface {
     private long msgID;
     private boolean running;
 
-    private static final int MAX_KEY_SIZE = 20;
-    private static final int MAX_VALUE_SIZE = 120 * 1024;
+    public static final int MAX_KEY_SIZE = 20;
+    public static final int MAX_VALUE_SIZE = 120 * 1024;
 
     /**
      * Initialize KVStore with address and port of KVServer
