@@ -123,6 +123,7 @@
       <test name="testing.PerformanceTests" />
     </junit>
   </target>
+  <!-- run test cases -->
 
   <target name="run" >
     <java classname="${main.class}" classpathref="class.path"/>
