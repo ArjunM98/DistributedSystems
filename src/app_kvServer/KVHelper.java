@@ -1,19 +1,36 @@
 package app_kvServer;
 
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.util.HashMap;
+
+import java.io.*;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class KVHelper {
 
-    private HashMap<String, String> Cache;
+    private ConcurrentHashMap<String, String> Cache;
     private final int NUM_PERSISTENT_STORES = 8;
     private final int CACHE_LIMIT = 2;
+
+    private void writeToFile(ArrayList<String> KVs, int fileIndex) {
+        String fileName = "store" + (fileIndex + 1) + ".txt";
+        try (FileWriter fw = new FileWriter(fileName, true))
+        {
+            BufferedWriter bw = new BufferedWriter(fw);
+            for (int i = 0; i < KVs.size(); i+=2) {
+                String hashedKey = String.valueOf(KVs.get(i).hashCode());
+                bw.write(hashedKey + "=" + KVs.get(i+1));
+                bw.newLine();
+            }
+            bw.flush();
+            bw.close();
+        } catch (IOException e) {
+            System.out.println("An error occurred.");
+            e.printStackTrace();
+        }
+    }
 
     //TODO: maybe return enum here (more informative)?
     private void writeToFile(String key, String value) {
@@ -45,12 +62,27 @@ public class KVHelper {
     private void purge() {
         Iterator<Map.Entry<String, String>> itr = Cache.entrySet().iterator();
 
+        ArrayList<String>[] KVGroupings = new ArrayList[NUM_PERSISTENT_STORES];
+
+        for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
+            KVGroupings[i] = new ArrayList<String>();
+        }
+
         while (itr.hasNext()) {
             Map.Entry<String, String> entry = itr.next();
             String key = entry.getKey();
             String value = entry.getValue();
-            writeToFile(key, value);
+            int fileIndex = getFileIndex(key);
+
+            KVGroupings[fileIndex].add(key);
+            KVGroupings[fileIndex].add(value);
+
             itr.remove();
+        }
+
+        for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
+            if (!KVGroupings[i].isEmpty())
+                writeToFile(KVGroupings[i], i);
         }
     }
 
@@ -62,7 +94,7 @@ public class KVHelper {
         String value = null;
         try {
             int fileIndex = getFileIndex(key);
-            String fileName = "store" + fileIndex + ".txt";
+            String fileName = "store" + (fileIndex + 1) + ".txt";
             File store = new File(fileName);
             Scanner reader = new Scanner(store);
 
@@ -105,7 +137,7 @@ public class KVHelper {
     //TODO: add destructor that purges cache
 
     public KVHelper() {
-        Cache = new HashMap<String, String>();
+        Cache = new ConcurrentHashMap<String, String>();
     }
 
     public static void main(String[] args) {
