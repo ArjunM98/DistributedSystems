@@ -5,17 +5,21 @@ import org.apache.log4j.Logger;
 
 public class KVLruCache implements IKVCache {
     private static final Logger logger = Logger.getRootLogger();
+    private final int cacheSize;
+
+    public KVLruCache(int cacheSize) {
+        this.cacheSize = cacheSize;
+        logger.warn("Constructor not implemented");
+    }
 
     @Override
     public IKVServer.CacheStrategy getCacheStrategy() {
-        logger.warn("getCacheStrategy() not implemented");
-        return null;
+        return IKVServer.CacheStrategy.LRU;
     }
 
     @Override
     public int getCacheSize() {
-        logger.warn("getCacheSize() not implemented");
-        return 0;
+        return cacheSize;
     }
 
     @Override
