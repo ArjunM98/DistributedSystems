@@ -21,8 +21,6 @@ public class KVNaiveStorage implements IKVStorage {
 
     private static final List<ReadWriteLock> locks = new ArrayList<>();
 
-    //TODO: change prints to logs
-
     public KVNaiveStorage() {
         for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
             try {
@@ -33,7 +31,7 @@ public class KVNaiveStorage implements IKVStorage {
                     logger.info("Store created: " + store.getName());
                 }
             } catch (IOException e) {
-                logger.error("An error occurred.", e);
+                logger.error("An error occurred during store creation.", e);
             }
 
             locks.add(new ReentrantReadWriteLock());
@@ -45,21 +43,19 @@ public class KVNaiveStorage implements IKVStorage {
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         String fileName = "data/store" + (storeIndex + 1) + ".txt";
         try (Scanner reader = new Scanner(new File(fileName))) {
-            String hashedKey = String.valueOf(key.hashCode());
 
             while (reader.hasNextLine()) {
                 String line = reader.nextLine();
-                //TODO: check index returned by indexof but shouldn't have errors if writes correct
-                int kvSeparatorIndex = line.indexOf("=");
+                int kvSeparatorIndex = line.indexOf(" ");
                 int flagIndex = line.lastIndexOf(",");
                 String k = line.substring(0, kvSeparatorIndex);
                 String flag = line.substring(flagIndex + 1);
-                if (hashedKey.equals(k) && flag.equals("V")) {
+                if (key.equals(k) && flag.equals("V")) {
                     value = line.substring(kvSeparatorIndex + 1, flagIndex);
                 }
             }
         } catch (FileNotFoundException e) {
-            logger.error("An error occurred.", e);
+            logger.error("An error occurred during read from store.", e);
         }
         return value;
     }
@@ -69,15 +65,13 @@ public class KVNaiveStorage implements IKVStorage {
         String fileName = "data/store" + (storeIndex + 1) + ".txt";
         try (BufferedWriter bw = new BufferedWriter(new FileWriter(fileName, true))) {
 
-            String hashedKey = String.valueOf(key.hashCode());
-
             if (delete)
-                bw.write(hashedKey + "=" + value + ",D");
+                bw.write(key + " " + value + ",D");
             else
-                bw.write(hashedKey + "=" + value + ",V");
+                bw.write(key + " " + value + ",V");
             bw.newLine();
         } catch (IOException e) {
-            logger.error("An error occurred.", e);
+            logger.error("An error occurred during write to store.", e);
         }
 
     }
@@ -90,7 +84,7 @@ public class KVNaiveStorage implements IKVStorage {
             try (FileWriter writer = new FileWriter(fileName)) {
                 writer.write("");
             } catch (IOException e) {
-                logger.error("An error occurred.", e);
+                logger.error("An error occurred during clearing of store.", e);
             }
         } finally {
             writeLock.unlock();
@@ -152,11 +146,11 @@ public class KVNaiveStorage implements IKVStorage {
     public static void main(String[] args) throws Exception {
         new LogSetup("logs/kvserver.log", Level.ALL);
         KVNaiveStorage helper = new KVNaiveStorage();
-//        helper.putKV("hello", "world");
-//        helper.putKV("ECE", "419");
-//        helper.putKV("TEP", "322");
-//        helper.putKV("ECE", "420");
-//        helper.putKV("something", "new");
+        helper.putKV("hello", "world");
+        helper.putKV("ECE", "419");
+        helper.putKV("TEP", "322");
+        helper.putKV("ECE", "420");
+        helper.putKV("something", "new");
         System.out.println(helper.getKV("ECE"));
     }
 }
