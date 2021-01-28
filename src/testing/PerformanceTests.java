@@ -9,8 +9,10 @@ import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
-import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
 import java.util.function.Predicate;
 
 public class PerformanceTests extends TestCase {
@@ -64,23 +66,22 @@ public class PerformanceTests extends TestCase {
         kvServer.clearStorage();
     }
 
-    public void putGetPerformance(Predicate <Integer> get) throws Exception {
-        Collections.shuffle(KVPairs);
-        long msgSize = 0;
-        long executionTime = 0;
+    public void putGetPerformance(Predicate<Integer> isGetIteration) throws Exception {
+        int msgSize = 0, executionTime = 0, iterations = 0;
 
-        for(int rep = 0; rep < 100; rep++) {
-            for (int i = 0; i < COMMANDS; i++) {
-                String key = KVPairs.get(i)[0];
-                String value = KVPairs.get(i)[1];
-                if (get.test(i)) {
-                    msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", i).getByteRepresentation().length;
+        for (int rep = 0; rep < 3; rep++) {
+            Collections.shuffle(KVPairs);
+            for (String[] kvPair : KVPairs) {
+                iterations++;
+                String key = kvPair[0], value = kvPair[1];
+                if (isGetIteration.test(iterations)) {
+                    msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", iterations).getByteRepresentation().length;
                     long start = System.currentTimeMillis();
                     kvClient.get(key);
                     long finish = System.currentTimeMillis();
                     executionTime += (finish - start);
                 } else {
-                    msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, i).getByteRepresentation().length;
+                    msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, iterations).getByteRepresentation().length;
                     long start = System.currentTimeMillis();
                     kvClient.put(key, value);
                     long finish = System.currentTimeMillis();
@@ -89,9 +90,9 @@ public class PerformanceTests extends TestCase {
             }
         }
 
-        double avgMsgSize = msgSize / (double) COMMANDS;
-        double avgExecutionTime = executionTime / (double) COMMANDS;
-        double avgThroughput = avgMsgSize / avgExecutionTime;
+        double avgMsgSize = msgSize / (double) iterations,
+                avgExecutionTime = executionTime / (double) iterations,
+                avgThroughput = avgMsgSize / avgExecutionTime;
 
         System.out.printf("Average Message Size %f Bytes\n", avgMsgSize);
         System.out.printf("Average Execution Time %f MilliSeconds\n", avgExecutionTime);
@@ -100,21 +101,20 @@ public class PerformanceTests extends TestCase {
         cleanUpServer();
     }
 
-
     @Test
-    public void test2080PutGetPerformance() throws Exception {
+    public void test20Get80PutPerformance() throws Exception {
         System.out.println("20/80 Get-Put Ratio");
         putGetPerformance(i -> i % 5 != 0);
     }
 
     @Test
-    public void test8020PutGetPerformance() throws Exception {
+    public void test80Get20PutPerformance() throws Exception {
         System.out.println("80/20 Get-Put Ratio");
         putGetPerformance(i -> i % 5 == 0);
     }
 
     @Test
-    public void test5050PutGetPerformance() throws Exception {
+    public void test50Get50PutPerformance() throws Exception {
         System.out.println("50/50 Get-Put Ratio");
         putGetPerformance(i -> i % 2 == 0);
     }

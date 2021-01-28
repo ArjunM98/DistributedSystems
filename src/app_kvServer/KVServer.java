@@ -1,5 +1,8 @@
 package app_kvServer;
 
+import app_kvServer.cache.IKVCache;
+import app_kvServer.storage.IKVStorage;
+import app_kvServer.storage.KVNaiveStorage;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -19,8 +22,8 @@ public class KVServer extends Thread implements IKVServer {
     private static final Logger logger = Logger.getRootLogger();
 
     private final int port;
-    private final int cacheSize;
-    private final CacheStrategy cacheStrategy;
+    private final IKVCache cache;
+    private final IKVStorage storage;
 
     private final ExecutorService threadPool;
     private ServerSocket serverSocket;
@@ -38,18 +41,19 @@ public class KVServer extends Thread implements IKVServer {
      *                  and "LFU".
      */
     public KVServer(int port, int cacheSize, String strategy) {
-        CacheStrategy cacheStrategy;
+        this.port = port;
+        this.threadPool = Executors.newCachedThreadPool();
+
+        CacheStrategy cacheStrategy = CacheStrategy.None;
         try {
             cacheStrategy = CacheStrategy.valueOf(strategy);
         } catch (IllegalArgumentException e) {
             logger.warn("Defaulting to no cache", e);
-            cacheStrategy = CacheStrategy.None;
+        } finally {
+            this.cache = IKVCache.newInstance(cacheStrategy, cacheSize);
         }
-        // TODO - finish implementation (mock KVServer basics)
-        this.port = port;
-        this.cacheSize = cacheSize;
-        this.cacheStrategy = cacheStrategy;
-        this.threadPool = Executors.newCachedThreadPool();
+
+        storage = new KVNaiveStorage();
     }
 
     @Override
@@ -69,51 +73,62 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public CacheStrategy getCacheStrategy() {
-        return cacheStrategy;
+        return cache.getCacheStrategy();
     }
 
     @Override
     public int getCacheSize() {
-        return cacheSize;
+        return cache.getCacheSize();
     }
 
     @Override
     public boolean inStorage(String key) {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.inStorage(String) not implemented");
-        return false;
+        return storage.inStorage(key);
     }
 
     @Override
     public boolean inCache(String key) {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.inCache(String) not implemented");
-        return false;
+        return cache.inCache(key);
     }
 
     @Override
     public String getKV(String key) throws Exception {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.getKV(String) not implemented");
-        return "";
+        if (inCache(key)) {
+            logger.debug(String.format("Key '%s' found in cache", key));
+            return cache.getKV(key);
+        }
+
+        if (inStorage(key)) {
+            logger.debug(String.format("Key '%s' found in storage", key));
+            return storage.getKV(key);
+        }
+
+        throw new IllegalArgumentException(String.format("No mapping for key '%s'", key));
     }
 
     @Override
     public void putKV(String key, String value) throws Exception {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.putKV(String, String) not implemented");
+        // TODO: concurrency bugs in both cases where cache may be wrongly updated if storage fails
+        // look into https://stackoverflow.com/q/5639870
+        if (value == null || value.isEmpty()) {
+            cache.delete(key);
+            storage.delete(key);
+        } else {
+            cache.putKV(key, value);
+            storage.putKV(key, value);
+        }
     }
 
     @Override
     public void clearCache() {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.clearCache() not implemented");
+        cache.clearCache();
+        logger.info("Cleared cache");
     }
 
     @Override
     public void clearStorage() {
-        // TODO Auto-generated method stub
-        logger.warn("KVServer.clearStorage() not implemented");
+        storage.clearStorage();
+        logger.info("Cleared storage");
     }
 
     @Override
