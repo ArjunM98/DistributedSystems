@@ -7,7 +7,7 @@ public interface IKVStorage {
      *
      * @return true if key in storage, false otherwise
      */
-    public boolean inStorage(String key) throws Exception;
+    public boolean inStorage(String key);
 
     /**
      * Get the value associated with the key
@@ -30,7 +30,7 @@ public interface IKVStorage {
      *
      * @throws Exception on failure e.g. when key not in the key range of the server
      */
-    public void deleteKV(String key) throws Exception;
+    public void delete(String key) throws Exception;
 
     /**
      * Clear the storage of the server

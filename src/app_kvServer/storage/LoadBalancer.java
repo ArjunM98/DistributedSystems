@@ -8,6 +8,6 @@ public class LoadBalancer implements ILoadBalancer {
 
     @Override
     public int getStoreIndex(String key, int numStores) {
-        return (int) (key.charAt(0))  % numStores;
+        return Math.abs(key.hashCode()) % numStores;
     }
 }

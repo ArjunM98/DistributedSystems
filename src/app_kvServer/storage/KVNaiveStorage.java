@@ -26,6 +26,7 @@ public class KVNaiveStorage implements IKVStorage {
             try {
                 String fileName = "data/store" + (i + 1) + ".txt";
                 File store = new File(fileName);
+                //noinspection ResultOfMethodCallIgnored
                 store.getParentFile().mkdirs();
                 if (store.createNewFile()) {
                     logger.info("Store created: " + store.getName());
@@ -92,8 +93,12 @@ public class KVNaiveStorage implements IKVStorage {
     }
 
     @Override
-    public boolean inStorage(String key) throws Exception {
-        return getKV(key) != null;
+    public boolean inStorage(String key) {
+        try {
+            return getKV(key) != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override
@@ -125,7 +130,7 @@ public class KVNaiveStorage implements IKVStorage {
     }
 
     @Override
-    public void deleteKV(String key) throws Exception {
+    public void delete(String key) throws Exception {
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
