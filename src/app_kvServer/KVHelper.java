@@ -7,12 +7,20 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class KVHelper {
 
     private ConcurrentHashMap<String, String> Cache;
+
     private final int NUM_PERSISTENT_STORES = 8;
     private final int CACHE_LIMIT = 2;
+
+    private ReadWriteLock lock = new ReentrantReadWriteLock();
+    private Lock writeLock = lock.writeLock();
+    private Lock readLock = lock.readLock();
 
     private void writeToFile(ArrayList<String> KVs, int fileIndex) {
         String fileName = "store" + (fileIndex + 1) + ".txt";
@@ -32,33 +40,6 @@ public class KVHelper {
         }
     }
 
-    //TODO: maybe return enum here (more informative)?
-    private void writeToFile(String key, String value) {
-        try {
-            int fileIndex = getFileIndex(key);
-            String fileName = "store" + fileIndex + ".txt";
-            File store = new File(fileName);
-            if (store.createNewFile()) {
-                System.out.println("Store created: " + store.getName());
-            }
-            try {
-                FileWriter writer = new FileWriter(fileName);
-
-                String hashedKey = String.valueOf(key.hashCode());
-
-                writer.write(hashedKey + "=" + value);
-                writer.close();
-            } catch (IOException e) {
-                System.out.println("An error occurred.");
-                e.printStackTrace();
-            }
-        } catch (IOException e) {
-            System.out.println("An error occurred.");
-            e.printStackTrace();
-        }
-    }
-
-    //TODO: group entries going to same file and use bufferedwriter for better performance
     private void purge() {
         Iterator<Map.Entry<String, String>> itr = Cache.entrySet().iterator();
 
@@ -82,7 +63,12 @@ public class KVHelper {
 
         for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
             if (!KVGroupings[i].isEmpty())
-                writeToFile(KVGroupings[i], i);
+                try {
+                    writeLock.lock();
+                    writeToFile(KVGroupings[i], i);
+                } finally {
+                    writeLock.unlock();
+                }
         }
     }
 
@@ -118,7 +104,12 @@ public class KVHelper {
         String value = null;
         String cachedValue = Cache.get(key);
         if (cachedValue == null) {
-            value = readFromFile(key);
+            try {
+                readLock.lock();
+                value = readFromFile(key);
+            } finally {
+                readLock.unlock();
+            }
         } else {
             value = cachedValue;
         }
