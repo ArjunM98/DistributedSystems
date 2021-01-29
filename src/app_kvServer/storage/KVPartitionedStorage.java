@@ -19,7 +19,7 @@ public class KVPartitionedStorage implements IKVStorage {
     /**
      * Note: this is an optimization of modulus and only applies when numStores is a power of 2
      */
-    private static final ILoadBalancer loadBalancer = (key, numStores) -> key.hashCode() & numStores;
+    private static final ILoadBalancer loadBalancer = (key, numStores) -> key.hashCode() & (numStores - 1);
 
     private static final List<ReadWriteLock> locks = new ArrayList<>();
 
