@@ -27,7 +27,7 @@ public class PerformanceTests extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    private static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 1, NUM_CLIENTS = 8;
+    private static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2, NUM_CLIENTS = 8;
 
     private static KVServer SERVER;
     private static List<KVStore> CLIENTS;
