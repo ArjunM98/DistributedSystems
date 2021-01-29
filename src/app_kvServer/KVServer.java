@@ -2,7 +2,7 @@ package app_kvServer;
 
 import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
-import app_kvServer.storage.KVNaiveStorage;
+import app_kvServer.storage.KVPartitionedStorage;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -53,7 +53,7 @@ public class KVServer extends Thread implements IKVServer {
             this.cache = IKVCache.newInstance(cacheStrategy, cacheSize);
         }
 
-        storage = new KVNaiveStorage();
+        storage = new KVPartitionedStorage();
     }
 
     @Override

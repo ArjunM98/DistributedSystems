@@ -1,19 +1,17 @@
 package app_kvServer.storage;
 
 import logger.LogSetup;
-import org.apache.commons.io.input.ReversedLinesFileReader;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class KVNaiveStorage implements IKVStorage {
+public class KVPartitionedStorage implements IKVStorage {
     private static final Logger logger = Logger.getRootLogger();
 
     private static final LoadBalancer loadBalancer = new LoadBalancer();
@@ -22,7 +20,7 @@ public class KVNaiveStorage implements IKVStorage {
 
     private static final List<ReadWriteLock> locks = new ArrayList<>();
 
-    public KVNaiveStorage() {
+    public KVPartitionedStorage() {
         for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
             try {
                 String fileName = "data/store" + (i + 1) + ".txt";
@@ -53,6 +51,8 @@ public class KVNaiveStorage implements IKVStorage {
                 String flag = line.substring(flagIndex + 1);
                 if (key.equals(k) && flag.equals("V")) {
                     value = line.substring(kvSeparatorIndex + 1, flagIndex);
+                } else if (key.equals(k) && flag.equals("D")) {
+                    value = null;
                 }
             }
         } catch (IOException e) {
@@ -133,7 +133,7 @@ public class KVNaiveStorage implements IKVStorage {
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
             writeLock.lock();
-            writeToStore(key, "null", true);
+            writeToStore(key, "", true);
         } finally {
             writeLock.unlock();
         }
@@ -148,12 +148,11 @@ public class KVNaiveStorage implements IKVStorage {
 
     public static void main(String[] args) throws Exception {
         new LogSetup("logs/kvserver.log", Level.ALL);
-        KVNaiveStorage helper = new KVNaiveStorage();
-        helper.putKV("hello", "world");
+        KVPartitionedStorage helper = new KVPartitionedStorage();
+        System.out.println(helper.getKV("ECE"));
         helper.putKV("ECE", "419");
-        helper.putKV("TEP", "322");
-        helper.putKV("ECE", "420");
-        helper.putKV("something", "new");
+        System.out.println(helper.getKV("ECE"));
+        helper.delete("ECE");
         System.out.println(helper.getKV("ECE"));
     }
 }
