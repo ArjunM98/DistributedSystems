@@ -9,10 +9,7 @@ import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -107,7 +104,7 @@ public class PerformanceTests extends TestCase {
         );
     }
 
-    public void putGetPerformance(Predicate<Integer> isGetIteration) {
+    public void putGetPerformance(String testName, Predicate<Integer> isGetIteration) {
         ExecutorService threadPool = Executors.newFixedThreadPool(NUM_CLIENTS);
         List<Callable<ThroughputResults>> threads = CLIENTS.stream()
                 .map(client -> (Callable<ThroughputResults>)
@@ -118,9 +115,9 @@ public class PerformanceTests extends TestCase {
             for (Future<ThroughputResults> future : threadPool.invokeAll(threads)) {
                 ThroughputResults result = future.get();
                 // TODO: decide whether we want to print per thread or aggregate and print global values
-                System.out.printf("Thread %d: Average Message Size %.3f Bytes\n", result.id, result.averageMessageSize);
-                System.out.printf("Thread %d: Average Latency %.3fms\n", result.id, result.averageLatency);
-                System.out.printf("Thread %d: Average Throughput %.3f KB/s\n", result.id, result.averageThroughput);
+                System.out.printf("%s: Thread %d: Average Message Size: %.3f Bytes\n", testName, result.id, result.averageMessageSize);
+                System.out.printf("%s: Thread %d: Average Latency: %.3f ms\n", testName, result.id, result.averageLatency);
+                System.out.printf("%s: Thread %d: Average Throughput: %.3f KB/s\n", testName, result.id, result.averageThroughput);
             }
         } catch (Exception e) {
             throw new RuntimeException("Threadpool error");
@@ -131,21 +128,57 @@ public class PerformanceTests extends TestCase {
     }
 
     @Test
-    public void test20Get80PutPerformance() {
-        System.out.println("20/80 Get-Put Ratio");
-        putGetPerformance(i -> i % 5 != 0);
+    public void test10Get90PutPerformance() {
+        System.out.println("10/90 Get-Put Ratio");
+        putGetPerformance("10/90", i -> i % 10 == 0);
     }
 
     @Test
-    public void test80Get20PutPerformance() {
-        System.out.println("80/20 Get-Put Ratio");
-        putGetPerformance(i -> i % 5 == 0);
+    public void test20Get80PutPerformance() {
+        System.out.println("20/80 Get-Put Ratio");
+        putGetPerformance("20/80", i -> i % 5 == 0);
+    }
+
+    @Test
+    public void test30Get70PutPerformance() {
+        System.out.println("30/70 Get-Put Ratio");
+        putGetPerformance("30/70", i -> Arrays.asList(0, 1, 2).contains(i % 10));
+    }
+
+    @Test
+    public void test40Get60PutPerformance() {
+        System.out.println("40/60 Get-Put Ratio");
+        putGetPerformance("40/60", i -> Arrays.asList(0, 1).contains(i % 5));
     }
 
     @Test
     public void test50Get50PutPerformance() {
         System.out.println("50/50 Get-Put Ratio");
-        putGetPerformance(i -> i % 2 == 0);
+        putGetPerformance("50/50", i -> i % 2 == 0);
+    }
+
+    @Test
+    public void test60Get40PutPerformance() {
+        System.out.println("60/40 Get-Put Ratio");
+        putGetPerformance("60/40", i -> i % 5 > 1);
+    }
+
+    @Test
+    public void test70Get30PutPerformance() {
+        System.out.println("70/30 Get-Put Ratio");
+        putGetPerformance("70/30", i -> i % 10 > 2);
+    }
+
+    @Test
+    public void test80Get20PutPerformance() {
+        System.out.println("80/20 Get-Put Ratio");
+        putGetPerformance("80/20", i -> i % 5 > 0);
+    }
+
+    @Test
+    public void test90Get10PutPerformance() {
+        System.out.println("90/10 Get-Put Ratio");
+        putGetPerformance("90/10", i -> i % 10 > 0);
     }
 
     private static class KeyValuePair {
