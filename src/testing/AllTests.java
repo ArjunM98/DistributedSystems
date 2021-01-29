@@ -14,7 +14,9 @@ public class AllTests {
     static {
         try {
             new LogSetup("logs/testing/test.log", Level.ERROR);
-            new KVServer(50000, 10, "FIFO").start();
+            KVServer server = new KVServer(50000, 10, "FIFO");
+            server.clearStorage(); // idk if we're allowed to do this
+            server.start(); // or this, but we need it to run ¯\_(ツ)_/¯
         } catch (IOException e) {
             e.printStackTrace();
         }

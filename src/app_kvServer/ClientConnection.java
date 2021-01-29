@@ -74,7 +74,7 @@ public class ClientConnection implements Runnable {
                 }
                 break;
             case PUT:
-                if (req.getValue() == null) try {
+                if ("null".equals(req.getValue())) try {
                     server.putKV(req.getKey(), req.getValue());
                     new KVMessageProto(KVMessage.StatusType.DELETE_SUCCESS, req.getKey(), req.getValue(), req.getId()).writeMessageTo(output);
                 } catch (Exception e) {

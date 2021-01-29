@@ -35,9 +35,8 @@ public class KVFifoCache implements IKVCache {
     }
 
     @Override
-    public String putKV(String key, String value) {
+    public void putKV(String key, String value) {
         logger.warn("putKV() not implemented");
-        return null;
     }
 
     @Override

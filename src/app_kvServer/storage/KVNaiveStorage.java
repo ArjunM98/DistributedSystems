@@ -116,8 +116,7 @@ public class KVNaiveStorage implements IKVStorage {
     }
 
     @Override
-    public String putKV(String key, String value) throws Exception {
-        String returnValue = getKV(key);
+    public void putKV(String key, String value) throws Exception {
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
@@ -126,7 +125,6 @@ public class KVNaiveStorage implements IKVStorage {
         } finally {
             writeLock.unlock();
         }
-        return returnValue;
     }
 
     @Override

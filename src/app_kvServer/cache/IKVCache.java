@@ -34,10 +34,8 @@ public interface IKVCache {
 
     /**
      * Put the key-value pair into storage
-     *
-     * @return previous value associated with key if updated, null if there was none
      */
-    public String putKV(String key, String value);
+    public void putKV(String key, String value);
 
     /**
      * Delete key-value pair from cache
@@ -85,8 +83,7 @@ public interface IKVCache {
         }
 
         @Override
-        public String putKV(String key, String value) {
-            return null;
+        public void putKV(String key, String value) {
         }
 
         @Override

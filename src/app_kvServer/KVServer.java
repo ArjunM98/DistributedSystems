@@ -110,7 +110,7 @@ public class KVServer extends Thread implements IKVServer {
     public void putKV(String key, String value) throws Exception {
         // TODO: concurrency bugs in both cases where cache may be wrongly updated if storage fails
         // look into https://stackoverflow.com/q/5639870
-        if (value == null || value.isEmpty()) {
+        if ("null".equals(value)) {
             cache.delete(key);
             storage.delete(key);
         } else {

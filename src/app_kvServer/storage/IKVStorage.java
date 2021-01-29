@@ -20,10 +20,9 @@ public interface IKVStorage {
     /**
      * Put the key-value pair into storage
      *
-     * @return previous value associated with key if updated, null if there was none
      * @throws Exception on failure e.g. when key not in the key range of the server
      */
-    public String putKV(String key, String value) throws Exception;
+    public void putKV(String key, String value) throws Exception;
 
     /**
      * Delete key-value pair from storage
