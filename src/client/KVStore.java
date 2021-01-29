@@ -116,7 +116,7 @@ public class KVStore implements KVCommInterface {
     }
 
     private boolean malformedKey(String key) {
-        // should also check for no space but that would fail testing.InteractionTest.testGetUnsetValue()
+        // TODO: should also check for no space but that would fail testing.InteractionTest.testGetUnsetValue()
         return key.isEmpty() || key.length() >= MAX_KEY_SIZE;
     }
 

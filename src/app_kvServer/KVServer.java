@@ -152,6 +152,7 @@ public class KVServer extends Thread implements IKVServer {
 
         while (this.isRunning.get()) {
             try {
+                // TODO: look into socket config e.g. timeout, keepalive, tcp optimization, ...
                 Socket client = serverSocket.accept();
                 logger.debug("New client:" + client);
                 threadPool.execute(new ClientConnection(client, this /* reference to server process */));

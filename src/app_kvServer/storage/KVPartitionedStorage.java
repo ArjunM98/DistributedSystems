@@ -1,7 +1,5 @@
 package app_kvServer.storage;
 
-import logger.LogSetup;
-import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.*;
@@ -148,17 +146,5 @@ public class KVPartitionedStorage implements IKVStorage {
             clearStore(i);
         }
     }
-
-    public static void main(String[] args) throws Exception {
-        new LogSetup("logs/kvserver.log", Level.ALL);
-        KVPartitionedStorage helper = new KVPartitionedStorage();
-        System.out.println(helper.getKV("ECE"));
-        helper.putKV("ECE", "419");
-        System.out.println(helper.getKV("ECE"));
-        helper.delete("ECE");
-        System.out.println(helper.getKV("ECE"));
-    }
 }
 
-//on hash look at everything before the = instead of string contains bc hash might contain another hash
-//add a tombstone to mark as deleted
