@@ -1,5 +1,10 @@
 package testing;
 
+import app_kvServer.KVServer;
+import app_kvServer.storage.KVPartitionedStorage;
+import client.KVStore;
+import logger.LogSetup;
+import org.apache.log4j.Level;
 import org.junit.Test;
 
 import junit.framework.TestCase;
@@ -9,8 +14,23 @@ import shared.messages.KVMessage;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.List;
 
 public class AdditionalTest extends TestCase {
+
+    private KVStore kvClient;
+
+    public void setUp() {
+        kvClient = new KVStore("localhost", 50000);
+        try {
+            kvClient.connect();
+        } catch (Exception e) {
+        }
+    }
+
+    public void tearDown() {
+        kvClient.disconnect();
+    }
 
     /**
      * Tests KVProto Message Format - Status
@@ -61,4 +81,57 @@ public class AdditionalTest extends TestCase {
         assertEquals(msgSend.getStatus(), msgRecv.getStatus());
     }
 
+//    public void cleanUpServer() {
+//        kvServer.clearCache();
+//        kvServer.clearStorage();
+//    }
+
+    /**
+     * Tests KVPartitionedStorage where KV pairs have values with spaces
+     */
+    @Test
+    public void testSpacedKVs() throws Exception {
+        String key = "spacedKey";
+        String value = "spaced Val";
+
+        kvClient.put(key, value);
+        KVMessage response = kvClient.get(key);
+
+        assertEquals(value, response.getValue());
+    }
+
+    /**
+     * Tests KVPartitionedStorage where KV pairs are overwritten
+     */
+    @Test
+    public void testOverwrittenKVs() throws Exception {
+        String key = "foo";
+        String value = "foo";
+        String newValue = "bar";
+
+        kvClient.put(key, value);
+        kvClient.put(key, newValue);
+
+        KVMessage response = kvClient.get(key);
+
+        assertEquals(newValue, response.getValue());
+    }
+
+    /**
+     * Tests KVPartitionedStorage where KV pairs are deleted multiple times
+     */
+    @Test
+    public void testDeletedKVs() throws Exception {
+        String key = "foo";
+        String value = "foo";
+
+        kvClient.put(key, value);
+        kvClient.put(key, "null");
+        kvClient.put(key, "null");
+        kvClient.put(key, "null");
+
+        KVMessage response = kvClient.get(key);
+
+        assertEquals("", response.getValue());
+    }
 }
