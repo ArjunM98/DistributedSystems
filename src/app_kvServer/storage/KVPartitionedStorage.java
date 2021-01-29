@@ -14,9 +14,12 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class KVPartitionedStorage implements IKVStorage {
     private static final Logger logger = Logger.getRootLogger();
 
-    private static final LoadBalancer loadBalancer = new LoadBalancer();
-
     private static final int NUM_PERSISTENT_STORES = 8;
+
+    /**
+     * Note: this is an optimization of modulus and only applies when numStores is a power of 2
+     */
+    private static final ILoadBalancer loadBalancer = (key, numStores) -> key.hashCode() & numStores;
 
     private static final List<ReadWriteLock> locks = new ArrayList<>();
 
