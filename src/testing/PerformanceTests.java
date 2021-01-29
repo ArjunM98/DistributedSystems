@@ -9,34 +9,59 @@ import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
-import java.io.IOException;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 public class PerformanceTests extends TestCase {
+    /**
+     * NUM_UNIQ_REQS: the number of unique key/value pairs to generate
+     * REQ_DUPLICITY: how many times each of the unique requests should be re-attempted
+     * NUM_CLIENTS: number of clients (and threads) to spin up
+     * <p>
+     * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
+     * and caching results may differ as you play around with the 3 vars
+     */
+    private static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 1, NUM_CLIENTS = 8;
 
-    private static KVStore kvClient;
-    private static KVServer kvServer;
-    private static final int COMMANDS = 100;
-    private static List<String[]> KVPairs;
+    private static KVServer SERVER;
+    private static List<KVStore> CLIENTS;
+    private static List<KeyValuePair> REQUEST_TEST_SET;
 
     static {
         try {
+            // 1. Test init
             new LogSetup("logs/testing/test.log", Level.ERROR);
-            kvServer = new KVServer(50000, 10, "FIFO");
-            kvClient = new KVStore("localhost", 50000);
-            generateRandomKV();
-            kvServer.start();
-            kvClient.connect();
+
+            REQUEST_TEST_SET = new ArrayList<>(NUM_UNIQ_REQS * REQ_DUPLICITY);
+            List<KeyValuePair> uniqueRequests = IntStream.range(0, NUM_UNIQ_REQS)
+                    .mapToObj(i -> new KeyValuePair(generateRandomString(KVStore.MAX_KEY_SIZE), generateRandomString(KVStore.MAX_VALUE_SIZE)))
+                    .collect(Collectors.toList());
+            REQUEST_TEST_SET.addAll(uniqueRequests);
+
+            // 2. Client-server init
+            SERVER = new KVServer(50000, 10, "FIFO");
+            CLIENTS = new ArrayList<>(NUM_CLIENTS);
+            for (int i = 0; i < NUM_CLIENTS; i++) CLIENTS.add(new KVStore("localhost", 50000));
+
+            // 3. Start communications
+            SERVER.start();
+            for (KVStore kvClient : CLIENTS) kvClient.connect();
         } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     public static String generateRandomString(int maxlength) {
-        String upperAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        String lowerAlphabet = "abcdefghijklmnopqrstuvwxyz";
-        String numbers = "0123456789";
-        String alphaNumeric = upperAlphabet + lowerAlphabet + numbers;
+        String alphaNumeric = String.join("", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789");
 
         StringBuilder sb = new StringBuilder();
         Random random = new Random();
@@ -52,70 +77,95 @@ public class PerformanceTests extends TestCase {
         return sb.toString();
     }
 
-    public static void generateRandomKV() {
-        KVPairs = new ArrayList<>(COMMANDS);
-        for (int i = 0; i < COMMANDS; i++) {
-            KVPairs.add(new String[]{generateRandomString(KVStore.MAX_KEY_SIZE), generateRandomString(KVStore.MAX_VALUE_SIZE)});
-        }
-    }
+    public ThroughputResults singleClientPerformance(KVStore store, List<KeyValuePair> tests, Predicate<Integer> isGetIteration) throws Exception {
+        int msgSize = 0, executionTime = 0, iterations = 0;
 
-    public void cleanUpServer() {
-        kvServer.clearCache();
-        kvServer.clearStorage();
-    }
-
-    public void putGetPerformance(Predicate <Integer> get) throws Exception {
-        Collections.shuffle(KVPairs);
-        long msgSize = 0;
-        long executionTime = 0;
-
-        for(int rep = 0; rep < 100; rep++) {
-            for (int i = 0; i < COMMANDS; i++) {
-                String key = KVPairs.get(i)[0];
-                String value = KVPairs.get(i)[1];
-                if (get.test(i)) {
-                    msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", i).getByteRepresentation().length;
-                    long start = System.currentTimeMillis();
-                    kvClient.get(key);
-                    long finish = System.currentTimeMillis();
-                    executionTime += (finish - start);
-                } else {
-                    msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, i).getByteRepresentation().length;
-                    long start = System.currentTimeMillis();
-                    kvClient.put(key, value);
-                    long finish = System.currentTimeMillis();
-                    executionTime += (finish - start);
-                }
+        Collections.shuffle(tests);
+        for (KeyValuePair test : tests) {
+            iterations++;
+            String key = test.key, value = test.value;
+            if (isGetIteration.test(iterations)) {
+                msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", iterations).getByteRepresentation().length;
+                long start = System.currentTimeMillis();
+                store.get(key);
+                long finish = System.currentTimeMillis();
+                executionTime += (finish - start);
+            } else {
+                msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, iterations).getByteRepresentation().length;
+                long start = System.currentTimeMillis();
+                store.put(key, value);
+                long finish = System.currentTimeMillis();
+                executionTime += (finish - start);
             }
         }
 
-        double avgMsgSize = msgSize / (double) COMMANDS;
-        double avgExecutionTime = executionTime / (double) COMMANDS;
-        double avgThroughput = avgMsgSize / avgExecutionTime;
 
-        System.out.printf("Average Message Size %f Bytes\n", avgMsgSize);
-        System.out.printf("Average Execution Time %f MilliSeconds\n", avgExecutionTime);
-        System.out.printf("Average Throughput %f KB/Second\n", avgThroughput);
-
-        cleanUpServer();
+        return new ThroughputResults(Thread.currentThread().getId(),
+                msgSize / (double) iterations,
+                executionTime / (double) iterations,
+                msgSize / (double) executionTime
+        );
     }
 
+    public void putGetPerformance(Predicate<Integer> isGetIteration) {
+        ExecutorService threadPool = Executors.newFixedThreadPool(NUM_CLIENTS);
+        List<Callable<ThroughputResults>> threads = CLIENTS.stream()
+                .map(client -> (Callable<ThroughputResults>)
+                        () -> singleClientPerformance(client, new ArrayList<>(REQUEST_TEST_SET), isGetIteration))
+                .collect(Collectors.toList());
+
+        try {
+            for (Future<ThroughputResults> future : threadPool.invokeAll(threads)) {
+                ThroughputResults result = future.get();
+                // TODO: decide whether we want to print per thread or aggregate and print global values
+                System.out.printf("Thread %d: Average Message Size %.3f Bytes\n", result.id, result.averageMessageSize);
+                System.out.printf("Thread %d: Average Latency %.3fms\n", result.id, result.averageLatency);
+                System.out.printf("Thread %d: Average Throughput %.3f KB/s\n", result.id, result.averageThroughput);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Threadpool error");
+        } finally {
+            SERVER.clearCache();
+            SERVER.clearStorage();
+        }
+    }
 
     @Test
-    public void test2080PutGetPerformance() throws Exception {
+    public void test20Get80PutPerformance() {
         System.out.println("20/80 Get-Put Ratio");
         putGetPerformance(i -> i % 5 != 0);
     }
 
     @Test
-    public void test8020PutGetPerformance() throws Exception {
+    public void test80Get20PutPerformance() {
         System.out.println("80/20 Get-Put Ratio");
         putGetPerformance(i -> i % 5 == 0);
     }
 
     @Test
-    public void test5050PutGetPerformance() throws Exception {
+    public void test50Get50PutPerformance() {
         System.out.println("50/50 Get-Put Ratio");
         putGetPerformance(i -> i % 2 == 0);
+    }
+
+    private static class KeyValuePair {
+        final String key, value;
+
+        KeyValuePair(String key, String value) {
+            this.key = key;
+            this.value = value;
+        }
+    }
+
+    private static class ThroughputResults {
+        final long id;
+        final double averageMessageSize, averageLatency, averageThroughput;
+
+        ThroughputResults(long id, double averageMessageSize, double averageLatency, double averageThroughput) {
+            this.id = id;
+            this.averageMessageSize = averageMessageSize;
+            this.averageLatency = averageLatency;
+            this.averageThroughput = averageThroughput;
+        }
     }
 }

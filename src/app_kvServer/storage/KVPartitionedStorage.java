@@ -1,31 +1,32 @@
 package app_kvServer.storage;
 
-import logger.LogSetup;
-import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Scanner;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class KVNaiveStorage implements IKVStorage {
+public class KVPartitionedStorage implements IKVStorage {
     private static final Logger logger = Logger.getRootLogger();
-
-    private static final LoadBalancer loadBalancer = new LoadBalancer();
 
     private static final int NUM_PERSISTENT_STORES = 8;
 
+    /**
+     * Note: this is an optimization of modulus and only applies when numStores is a power of 2
+     */
+    private static final ILoadBalancer loadBalancer = (key, numStores) -> key.hashCode() & (numStores - 1);
+
     private static final List<ReadWriteLock> locks = new ArrayList<>();
 
-    public KVNaiveStorage() {
+    public KVPartitionedStorage() {
         for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
             try {
                 String fileName = "data/store" + (i + 1) + ".txt";
                 File store = new File(fileName);
+                //noinspection ResultOfMethodCallIgnored
                 store.getParentFile().mkdirs();
                 if (store.createNewFile()) {
                     logger.info("Store created: " + store.getName());
@@ -42,19 +43,20 @@ public class KVNaiveStorage implements IKVStorage {
         String value = null;
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         String fileName = "data/store" + (storeIndex + 1) + ".txt";
-        try (Scanner reader = new Scanner(new File(fileName))) {
-
-            while (reader.hasNextLine()) {
-                String line = reader.nextLine();
+        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
                 int kvSeparatorIndex = line.indexOf(" ");
                 int flagIndex = line.lastIndexOf(",");
                 String k = line.substring(0, kvSeparatorIndex);
                 String flag = line.substring(flagIndex + 1);
                 if (key.equals(k) && flag.equals("V")) {
                     value = line.substring(kvSeparatorIndex + 1, flagIndex);
+                } else if (key.equals(k) && flag.equals("D")) {
+                    value = null;
                 }
             }
-        } catch (FileNotFoundException e) {
+        } catch (IOException e) {
             logger.error("An error occurred during read from store.", e);
         }
         return value;
@@ -92,8 +94,12 @@ public class KVNaiveStorage implements IKVStorage {
     }
 
     @Override
-    public boolean inStorage(String key) throws Exception {
-        return getKV(key) != null;
+    public boolean inStorage(String key) {
+        try {
+            return getKV(key) != null;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     @Override
@@ -111,8 +117,7 @@ public class KVNaiveStorage implements IKVStorage {
     }
 
     @Override
-    public String putKV(String key, String value) throws Exception {
-        String returnValue = getKV(key);
+    public void putKV(String key, String value) throws Exception {
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
@@ -121,11 +126,10 @@ public class KVNaiveStorage implements IKVStorage {
         } finally {
             writeLock.unlock();
         }
-        return returnValue;
     }
 
     @Override
-    public void deleteKV(String key) throws Exception {
+    public void delete(String key) throws Exception {
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
@@ -142,18 +146,5 @@ public class KVNaiveStorage implements IKVStorage {
             clearStore(i);
         }
     }
-
-    public static void main(String[] args) throws Exception {
-        new LogSetup("logs/kvserver.log", Level.ALL);
-        KVNaiveStorage helper = new KVNaiveStorage();
-        helper.putKV("hello", "world");
-        helper.putKV("ECE", "419");
-        helper.putKV("TEP", "322");
-        helper.putKV("ECE", "420");
-        helper.putKV("something", "new");
-        System.out.println(helper.getKV("ECE"));
-    }
 }
 
-//on hash look at everything before the = instead of string contains bc hash might contain another hash
-//add a tombstone to mark as deleted

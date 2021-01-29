@@ -40,10 +40,58 @@ public interface IKVCache {
     /**
      * Delete key-value pair from cache
      */
-    public void deleteKV(String key, String value) throws Exception;
+    public void delete(String key) throws Exception;
 
     /**
      * Clear the local cache of the server
      */
     public void clearCache();
+
+    static IKVCache newInstance(IKVServer.CacheStrategy strategy, int size) {
+        switch (strategy) {
+            case LRU:
+                return new KVLruCache(size);
+            case LFU:
+                return new KVLfuCache(size);
+            case FIFO:
+                return new KVFifoCache(size);
+            default:
+                break;
+        }
+        return new NoneCache();
+    }
+
+    class NoneCache implements IKVCache {
+        @Override
+        public IKVServer.CacheStrategy getCacheStrategy() {
+            return IKVServer.CacheStrategy.None;
+        }
+
+        @Override
+        public int getCacheSize() {
+            return 0;
+        }
+
+        @Override
+        public boolean inCache(String key) {
+            return false;
+        }
+
+        @Override
+        public String getKV(String key) {
+            return null;
+        }
+
+        @Override
+        public void putKV(String key, String value) {
+        }
+
+        @Override
+        public void delete(String key) {
+        }
+
+        @Override
+        public void clearCache() {
+        }
+    }
 }

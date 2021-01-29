@@ -9,7 +9,7 @@ public class KVLruCache implements IKVCache {
 
     public KVLruCache(int cacheSize) {
         this.cacheSize = cacheSize;
-        logger.warn("Constructor not implemented");
+        logger.warn("KVLruCache not implemented");
     }
 
     @Override
@@ -24,28 +24,23 @@ public class KVLruCache implements IKVCache {
 
     @Override
     public boolean inCache(String key) {
-        logger.warn("inCache() not implemented");
         return false;
     }
 
     @Override
     public String getKV(String key) {
-        logger.warn("getKV() not implemented");
         return null;
     }
 
     @Override
     public void putKV(String key, String value) {
-        logger.warn("putKV() not implemented");
     }
 
     @Override
-    public void deleteKV(String key, String value) throws Exception {
-        logger.warn("deleteKV() not implemented");
+    public void delete(String key) throws Exception {
     }
 
     @Override
     public void clearCache() {
-        logger.warn("clearCache() not implemented");
     }
 }
