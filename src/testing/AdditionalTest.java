@@ -13,11 +13,15 @@ import java.util.Arrays;
 public class AdditionalTest extends TestCase {
 
     private KVStore kvClient;
+    private KVStore kvClientAddition;
+
 
     public void setUp() {
         kvClient = new KVStore("localhost", 50000);
+        kvClientAddition = new KVStore("localhost", 50000);
         try {
             kvClient.connect();
+            kvClientAddition.connect();
         } catch (Exception e) {
         }
     }
@@ -125,28 +129,39 @@ public class AdditionalTest extends TestCase {
     }
 
     /**
-     * Ensure that we're able to get each of the possible message statuses
+     * Ensure that we only respond to requests of keys in the appropriate size range
      */
     @Test
-    public void testMessageStatus() throws Exception {
-        // Test PUTs
-        assertEquals(KVMessage.StatusType.PUT_SUCCESS, kvClient.put("key", "value").getStatus());
-        assertEquals(KVMessage.StatusType.PUT_UPDATE, kvClient.put("key", "new value").getStatus());
-        // TODO: how to force PUT_ERROR?
+    public void testMaxKeyError() throws Exception {
+        char[] bigKey = new char[KVStore.MAX_KEY_SIZE + 1];
+        Arrays.fill(bigKey, 'x');
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.get(String.valueOf(bigKey)).getStatus());
+    }
 
-        // Test GETs
-        assertEquals(KVMessage.StatusType.GET_SUCCESS, kvClient.get("key").getStatus());
-        assertEquals(KVMessage.StatusType.GET_ERROR, kvClient.get("nonexistent_key").getStatus());
-
-        // Test client-side failures
+    /**
+     * Ensure that we only respond to requests of values in the appropriate size range
+     */
+    @Test
+    public void testMaxValueError() throws Exception {
         char[] bigKey = new char[KVStore.MAX_KEY_SIZE + 1], bigValue = new char[KVStore.MAX_VALUE_SIZE + 1];
         Arrays.fill(bigKey, 'x');
         Arrays.fill(bigValue, 'x');
-        assertEquals(KVMessage.StatusType.FAILED, kvClient.get(String.valueOf(bigKey)).getStatus());
         assertEquals(KVMessage.StatusType.FAILED, kvClient.put(String.valueOf(bigKey), "small value").getStatus());
         assertEquals(KVMessage.StatusType.FAILED, kvClient.put("small_key", String.valueOf(bigValue)).getStatus());
+    }
 
-        // Test server-side failures
-        // TODO: but how? would require malformed protobuf
+    /**
+     * Ensure that we only respond to requests of values in the appropriate size range
+     */
+    @Test
+    public void testMultipleClientAccess() throws Exception {
+        String key = "test1Key";
+        String value = "test1Val";
+
+        KVMessage resClient1 = kvClient.put(key, value);
+        KVMessage resClient2 = kvClientAddition.get(key);
+
+        assertEquals(KVMessage.StatusType.PUT_SUCCESS, resClient1.getStatus());
+        assertEquals(value, resClient2.getValue());
     }
 }
