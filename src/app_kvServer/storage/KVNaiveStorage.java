@@ -1,6 +1,7 @@
 package app_kvServer.storage;
 
 import logger.LogSetup;
+import org.apache.commons.io.input.ReversedLinesFileReader;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
@@ -43,10 +44,9 @@ public class KVNaiveStorage implements IKVStorage {
         String value = null;
         int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
         String fileName = "data/store" + (storeIndex + 1) + ".txt";
-        try (Scanner reader = new Scanner(new File(fileName))) {
-
-            while (reader.hasNextLine()) {
-                String line = reader.nextLine();
+        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
                 int kvSeparatorIndex = line.indexOf(" ");
                 int flagIndex = line.lastIndexOf(",");
                 String k = line.substring(0, kvSeparatorIndex);
@@ -55,7 +55,7 @@ public class KVNaiveStorage implements IKVStorage {
                     value = line.substring(kvSeparatorIndex + 1, flagIndex);
                 }
             }
-        } catch (FileNotFoundException e) {
+        } catch (IOException e) {
             logger.error("An error occurred during read from store.", e);
         }
         return value;
@@ -133,7 +133,7 @@ public class KVNaiveStorage implements IKVStorage {
         Lock writeLock = locks.get(storeIndex).writeLock();
         try {
             writeLock.lock();
-            writeToStore(key, "", true);
+            writeToStore(key, "null", true);
         } finally {
             writeLock.unlock();
         }
