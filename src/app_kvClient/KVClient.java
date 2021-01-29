@@ -102,7 +102,7 @@ public class KVClient implements IKVClient {
         if (tokens[0].equals("put") && validParams(tokens, 2, 3)) {
             try {
                 KVMessage res = kvStore.put(tokens[1], tokens.length == 2 ? "null" : tokens[2]);
-                printResponse(res);
+                System.out.printf("%s%s%n", PROMPT, res);
             } catch (Exception e) {
                 System.out.println(PROMPT + "Server not connected");
                 logger.info("Server disconnected: " + e.getMessage());
@@ -112,7 +112,7 @@ public class KVClient implements IKVClient {
         } else if (tokens[0].equals("get") && validParams(tokens, 2 /* num params */)) {
             try {
                 KVMessage res = kvStore.get(tokens[1]);
-                printResponse(res);
+                System.out.printf("%s%s%n", PROMPT, res);
             } catch (Exception e) {
                 System.out.println(PROMPT + "Server not connected");
                 logger.info("Server disconnected: " + e.getMessage());
@@ -120,10 +120,6 @@ public class KVClient implements IKVClient {
                 disconnect();
             }
         }
-    }
-
-    private void printResponse(KVMessage msg) {
-        System.out.printf("%s%s<%s,%s>%n", PROMPT, msg.getStatus(), msg.getKey(), msg.getValue());
     }
 
     private boolean validParams(String[] tokens, int... numParams) {

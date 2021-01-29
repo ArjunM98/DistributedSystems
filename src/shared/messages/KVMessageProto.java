@@ -1,13 +1,15 @@
 package shared.messages;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.IOException;
-import java.util.Objects;
-
 import shared.messages.proto.ProtoKVMessage.KVProto;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.Objects;
+
 public class KVMessageProto implements KVMessage {
+    public static final long START_MESSAGE_ID = 1, UNKNOWN_MESSAGE_ID = 0;
+    public static final String ERROR_KEY = "ERROR";
 
     private final KVProto msg;
 
@@ -48,7 +50,9 @@ public class KVMessageProto implements KVMessage {
         return msg.getValueMsg();
     }
 
-    public long getId() { return msg.getIdMsg(); }
+    public long getId() {
+        return msg.getIdMsg();
+    }
 
     /**
      * Serializes message and writes it to output stream.
@@ -62,10 +66,13 @@ public class KVMessageProto implements KVMessage {
     /**
      * @return returns a human readable format of KVProto
      */
-    public String getMessageString() {
-        return msg.toString();
+    @Override
+    public String toString() {
+        return String.format("%d: %s<%s,%s>", this.getId(), this.getStatus(), this.getKey(), this.getValue());
     }
 
-    public byte[] getByteRepresentation() { return msg.toByteArray(); }
 
+    public byte[] getByteRepresentation() {
+        return msg.toByteArray();
+    }
 }

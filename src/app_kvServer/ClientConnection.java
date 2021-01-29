@@ -45,11 +45,11 @@ public class ClientConnection implements Runnable {
                 logger.debug("Responding to request " + request.getId());
                 respondToRequest(request, output);
             } catch (InvalidProtocolBufferException | IllegalArgumentException e) {
-                logger.info("Bad message: " + e.getMessage());
-                // TODO: properly send failure
-                new KVMessageProto(KVMessage.StatusType.FAILED, "todo", "todo", 0).writeMessageTo(output);
+                String message = "Bad message: " + e.getMessage();
+                logger.info(message, e);
+                new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.ERROR_KEY, message, KVMessageProto.UNKNOWN_MESSAGE_ID)
+                        .writeMessageTo(output); // TODO: Note this might throw again, in which case should we assume dead client?
             } catch (IOException | NullPointerException e) {
-                // connection either terminated by the client or lost due to network problems
                 logger.info("Client disconnected: " + e.getMessage());
                 break;
             }

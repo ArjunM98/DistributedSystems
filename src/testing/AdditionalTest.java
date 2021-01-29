@@ -1,20 +1,14 @@
 package testing;
 
-import app_kvServer.KVServer;
-import app_kvServer.storage.KVPartitionedStorage;
 import client.KVStore;
-import logger.LogSetup;
-import org.apache.log4j.Level;
-import org.junit.Test;
-
 import junit.framework.TestCase;
-
-import shared.messages.KVMessageProto;
+import org.junit.Test;
 import shared.messages.KVMessage;
+import shared.messages.KVMessageProto;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.List;
+import java.util.Arrays;
 
 public class AdditionalTest extends TestCase {
 
@@ -81,11 +75,6 @@ public class AdditionalTest extends TestCase {
         assertEquals(msgSend.getStatus(), msgRecv.getStatus());
     }
 
-//    public void cleanUpServer() {
-//        kvServer.clearCache();
-//        kvServer.clearStorage();
-//    }
-
     /**
      * Tests KVPartitionedStorage where KV pairs have values with spaces
      */
@@ -133,5 +122,31 @@ public class AdditionalTest extends TestCase {
         KVMessage response = kvClient.get(key);
 
         assertEquals("", response.getValue());
+    }
+
+    /**
+     * Ensure that we're able to get each of the possible message statuses
+     */
+    @Test
+    public void testMessageStatus() throws Exception {
+        // Test PUTs
+        assertEquals(KVMessage.StatusType.PUT_SUCCESS, kvClient.put("key", "value").getStatus());
+        assertEquals(KVMessage.StatusType.PUT_UPDATE, kvClient.put("key", "new value").getStatus());
+        // TODO: how to force PUT_ERROR?
+
+        // Test GETs
+        assertEquals(KVMessage.StatusType.GET_SUCCESS, kvClient.get("key").getStatus());
+        assertEquals(KVMessage.StatusType.GET_ERROR, kvClient.get("nonexistent_key").getStatus());
+
+        // Test client-side failures
+        char[] bigKey = new char[KVStore.MAX_KEY_SIZE + 1], bigValue = new char[KVStore.MAX_VALUE_SIZE + 1];
+        Arrays.fill(bigKey, 'x');
+        Arrays.fill(bigValue, 'x');
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.get(String.valueOf(bigKey)).getStatus());
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.put(String.valueOf(bigKey), "small value").getStatus());
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.put("small_key", String.valueOf(bigValue)).getStatus());
+
+        // Test server-side failures
+        // TODO: but how? would require malformed protobuf
     }
 }
