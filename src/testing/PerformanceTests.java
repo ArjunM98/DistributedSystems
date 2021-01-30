@@ -50,7 +50,6 @@ public class PerformanceTests extends TestCase {
             for (int i = 0; i < NUM_CLIENTS; i++) CLIENTS.add(new KVStore("localhost", 50000));
 
             // 3. Start communications
-            SERVER.start();
             for (KVStore kvClient : CLIENTS) kvClient.connect();
         } catch (Exception e) {
             e.printStackTrace();
