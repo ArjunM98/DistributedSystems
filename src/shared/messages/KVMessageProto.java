@@ -9,9 +9,16 @@ import java.util.Objects;
 
 public class KVMessageProto implements KVMessage {
     public static final long START_MESSAGE_ID = 1, UNKNOWN_MESSAGE_ID = 0;
-    public static final String ERROR_KEY = "ERROR";
+    public static final String SERVER_ERROR_KEY = "SERVER_ERROR", CLIENT_ERROR_KEY = "CLIENT_ERROR";
 
     private final KVProto msg;
+
+    /**
+     * Overloaded constructor for value-less messages
+     */
+    public KVMessageProto(StatusType status, String key, long id) {
+        this(status, key, "", id);
+    }
 
     /**
      * Constructs a KV message format using protobuf builder.

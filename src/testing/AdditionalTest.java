@@ -8,7 +8,6 @@ import shared.messages.KVMessageProto;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
-import java.util.Arrays;
 
 public class AdditionalTest extends TestCase {
 
@@ -35,8 +34,8 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testKVProtoGetStatus() {
-        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.GET, "key", "value", 1);
-        assertEquals(msg.getStatus(), KVMessage.StatusType.GET);
+        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.PUT, "key", "value", 1);
+        assertEquals(msg.getStatus(), KVMessage.StatusType.PUT);
     }
 
     /**
@@ -44,7 +43,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testKVProtoGetKey() {
-        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.GET, "key", "value", 1);
+        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.PUT, "key", "value", 1);
         assertEquals(msg.getKey(), "key");
     }
 
@@ -53,7 +52,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testKVProtoGetValue() {
-        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.GET, "key", "value", 1);
+        KVMessageProto msg = new KVMessageProto(KVMessage.StatusType.PUT, "key", "value", 1);
         assertEquals(msg.getValue(), "value");
     }
 
@@ -62,7 +61,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testKVProtoWriteParseStream() throws Exception {
-        KVMessageProto msgSend = new KVMessageProto(KVMessage.StatusType.GET, "key", "value", 1);
+        KVMessageProto msgSend = new KVMessageProto(KVMessage.StatusType.PUT, "key", "value", 1);
         KVMessageProto msgRecv;
 
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
@@ -133,9 +132,11 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testMaxKeyError() throws Exception {
-        char[] bigKey = new char[KVStore.MAX_KEY_SIZE + 1];
-        Arrays.fill(bigKey, 'x');
-        assertEquals(KVMessage.StatusType.FAILED, kvClient.get(String.valueOf(bigKey)).getStatus());
+        String goodKey = "x".repeat(KVStore.MAX_KEY_SIZE);
+        String badKey = goodKey + "x";
+
+        assertNotSame(KVMessage.StatusType.FAILED, kvClient.get(goodKey).getStatus());
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.get(badKey).getStatus());
     }
 
     /**
@@ -143,11 +144,11 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testMaxValueError() throws Exception {
-        char[] bigKey = new char[KVStore.MAX_KEY_SIZE + 1], bigValue = new char[KVStore.MAX_VALUE_SIZE + 1];
-        Arrays.fill(bigKey, 'x');
-        Arrays.fill(bigValue, 'x');
-        assertEquals(KVMessage.StatusType.FAILED, kvClient.put(String.valueOf(bigKey), "small value").getStatus());
-        assertEquals(KVMessage.StatusType.FAILED, kvClient.put("small_key", String.valueOf(bigValue)).getStatus());
+        String goodValue = "x".repeat(KVStore.MAX_VALUE_SIZE);
+        String badValue = goodValue + "x";
+
+        assertNotSame(KVMessage.StatusType.FAILED, kvClient.put("goodkey", goodValue).getStatus());
+        assertEquals(KVMessage.StatusType.FAILED, kvClient.put("goodkey", badValue).getStatus());
     }
 
     /**

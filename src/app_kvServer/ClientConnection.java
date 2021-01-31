@@ -47,7 +47,7 @@ public class ClientConnection implements Runnable {
             } catch (InvalidProtocolBufferException | IllegalArgumentException e) {
                 String message = "Bad message: " + e.getMessage();
                 logger.info(message, e);
-                new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.ERROR_KEY, message, KVMessageProto.UNKNOWN_MESSAGE_ID)
+                new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.SERVER_ERROR_KEY, message, KVMessageProto.UNKNOWN_MESSAGE_ID)
                         .writeMessageTo(output); // TODO: Note this might throw again, in which case should we assume dead client?
             } catch (IOException | NullPointerException e) {
                 logger.info("Client disconnected: " + e.getMessage());
@@ -70,7 +70,7 @@ public class ClientConnection implements Runnable {
                     String value = server.getKV(req.getKey());
                     new KVMessageProto(KVMessage.StatusType.GET_SUCCESS, req.getKey(), value, req.getId()).writeMessageTo(output);
                 } catch (Exception e) {
-                    new KVMessageProto(KVMessage.StatusType.GET_ERROR, req.getKey(), "", req.getId()).writeMessageTo(output);
+                    new KVMessageProto(KVMessage.StatusType.GET_ERROR, req.getKey(), req.getId()).writeMessageTo(output);
                 }
                 break;
             case PUT:

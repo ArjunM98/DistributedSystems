@@ -81,7 +81,7 @@ public class PerformanceTests extends TestCase {
             iterations++;
             String key = test.key, value = test.value;
             if (isGetIteration.test(iterations)) {
-                msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", iterations).getByteRepresentation().length;
+                msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, iterations).getByteRepresentation().length;
                 long start = System.currentTimeMillis();
                 store.get(key);
                 long finish = System.currentTimeMillis();
