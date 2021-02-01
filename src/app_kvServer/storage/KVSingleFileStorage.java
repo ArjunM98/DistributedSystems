@@ -24,12 +24,8 @@ public class KVSingleFileStorage implements IKVStorage {
     private final ReadWriteLock lock;
     private final File storage;
 
-    public KVSingleFileStorage() {
-        this("naive.txt");
-    }
-
-    public KVSingleFileStorage(String filename) {
-        this("data", filename);
+    public KVSingleFileStorage(String directory) {
+        this(directory, "naive.txt");
     }
 
     public KVSingleFileStorage(String directory, String filename) {

@@ -44,7 +44,7 @@ public class KVServer extends Thread implements IKVServer {
         this.port = port;
         this.threadPool = Executors.newCachedThreadPool();
 
-        this.storage = new KVPartitionedStorage();
+        this.storage = new KVPartitionedStorage("data");
         CacheStrategy cacheStrategy = CacheStrategy.None;
         try {
             cacheStrategy = CacheStrategy.valueOf(strategy);

@@ -16,9 +16,9 @@ public class KVPartitionedStorage implements IKVStorage {
 
     private final List<KVSingleFileStorage> stores;
 
-    public KVPartitionedStorage() {
+    public KVPartitionedStorage(String directory) {
         stores = IntStream.rangeClosed(1, NUM_PERSISTENT_STORES)
-                .mapToObj(i -> new KVSingleFileStorage(String.format("store%d.txt", i)))
+                .mapToObj(i -> new KVSingleFileStorage(directory, String.format("store%d.txt", i)))
                 .collect(Collectors.toUnmodifiableList());
     }
 
