@@ -1,10 +1,14 @@
 package app_kvServer.storage;
 
-public interface ILoadBalancer {
+import java.util.List;
+
+public interface ILoadBalancer<T> {
     /**
-     * Fairly distributes KVs across stores
+     * Fairly distributes KVs across nodes
      *
-     * @return index of store to be used
+     * @param key   to assign to storage
+     * @param nodes (stores) along which to partition data
+     * @return node (store) to be used
      */
-    public int getStoreIndex(String key, int numStores);
+    public T balanceRequest(String key, List<T> nodes);
 }

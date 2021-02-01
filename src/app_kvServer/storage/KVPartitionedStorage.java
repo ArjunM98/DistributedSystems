@@ -2,148 +2,158 @@ package app_kvServer.storage;
 
 import org.apache.log4j.Logger;
 
-import java.io.*;
-import java.util.ArrayList;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.nio.file.Files;
 import java.util.List;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class KVPartitionedStorage implements IKVStorage {
     private static final Logger logger = Logger.getRootLogger();
+    private static final String KV_DELIMITER = " ";
 
     private static final int NUM_PERSISTENT_STORES = 8;
+    private static final ILoadBalancer<ConcurrentFileStore> loadBalancer = ConcurrentFileStore.createLoadBalancer(NUM_PERSISTENT_STORES);
 
-    /**
-     * Note: this is an optimization of modulus and only applies when numStores is a power of 2
-     */
-    private static final ILoadBalancer loadBalancer = (key, numStores) -> key.hashCode() & (numStores - 1);
-
-    private static final List<ReadWriteLock> locks = new ArrayList<>();
+    private final List<ConcurrentFileStore> stores;
 
     public KVPartitionedStorage() {
-        for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
-            try {
-                String fileName = "data/store" + (i + 1) + ".txt";
-                File store = new File(fileName);
-                //noinspection ResultOfMethodCallIgnored
-                store.getParentFile().mkdirs();
-                if (store.createNewFile()) {
-                    logger.info("Store created: " + store.getName());
-                }
-            } catch (IOException e) {
-                logger.error("An error occurred during store creation.", e);
-            }
-
-            locks.add(new ReentrantReadWriteLock());
-        }
-    }
-
-    private String readFromStore(String key) {
-        String value = null;
-        int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
-        String fileName = "data/store" + (storeIndex + 1) + ".txt";
-        try (BufferedReader reader = new BufferedReader(new FileReader(fileName))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                int kvSeparatorIndex = line.indexOf(" ");
-                int flagIndex = line.lastIndexOf(",");
-                String k = line.substring(0, kvSeparatorIndex);
-                String flag = line.substring(flagIndex + 1);
-                if (key.equals(k) && flag.equals("V")) {
-                    value = line.substring(kvSeparatorIndex + 1, flagIndex);
-                } else if (key.equals(k) && flag.equals("D")) {
-                    value = null;
-                }
-            }
-        } catch (IOException e) {
-            logger.error("An error occurred during read from store.", e);
-        }
-        return value;
-    }
-
-    private void writeToStore(String key, String value, boolean delete) {
-        int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
-        String fileName = "data/store" + (storeIndex + 1) + ".txt";
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(fileName, true))) {
-
-            if (delete)
-                bw.write(key + " " + value + ",D");
-            else
-                bw.write(key + " " + value + ",V");
-            bw.newLine();
-        } catch (IOException e) {
-            logger.error("An error occurred during write to store.", e);
-        }
-
-    }
-
-    private void clearStore(int storeIndex) {
-        Lock writeLock = locks.get(storeIndex).writeLock();
-        try {
-            writeLock.lock();
-            String fileName = "data/store" + (storeIndex + 1) + ".txt";
-            try (FileWriter writer = new FileWriter(fileName)) {
-                writer.write("");
-            } catch (IOException e) {
-                logger.error("An error occurred during clearing of store.", e);
-            }
-        } finally {
-            writeLock.unlock();
-        }
+        stores = IntStream.rangeClosed(1, NUM_PERSISTENT_STORES)
+                .mapToObj(i -> new ConcurrentFileStore("data", String.format("store%d.txt", i)))
+                .collect(Collectors.toUnmodifiableList());
     }
 
     @Override
     public boolean inStorage(String key) {
+        return getKV(key) != null;
+    }
+
+    @Override
+    public String getKV(String key) {
+        final ConcurrentFileStore store = loadBalancer.balanceRequest(key, stores);
         try {
-            return getKV(key) != null;
-        } catch (Exception e) {
-            return false;
+            store.lock.readLock().lock();
+            return store.readFromStore(key);
+        } finally {
+            store.lock.readLock().unlock();
         }
     }
 
     @Override
-    public String getKV(String key) throws Exception {
-        String value;
-        int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
-        Lock readLock = locks.get(storeIndex).readLock();
+    public void putKV(String key, String value) {
+        final ConcurrentFileStore store = loadBalancer.balanceRequest(key, stores);
         try {
-            readLock.lock();
-            value = readFromStore(key);
+            store.lock.writeLock().lock();
+            store.writeToStore(key, value, Tombstone.VALID);
         } finally {
-            readLock.unlock();
-        }
-        return value;
-    }
-
-    @Override
-    public void putKV(String key, String value) throws Exception {
-        int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
-        Lock writeLock = locks.get(storeIndex).writeLock();
-        try {
-            writeLock.lock();
-            writeToStore(key, value, false);
-        } finally {
-            writeLock.unlock();
+            store.lock.writeLock().unlock();
         }
     }
 
     @Override
-    public void delete(String key) throws Exception {
-        int storeIndex = loadBalancer.getStoreIndex(key, NUM_PERSISTENT_STORES);
-        Lock writeLock = locks.get(storeIndex).writeLock();
+    public void delete(String key) {
+        final ConcurrentFileStore store = loadBalancer.balanceRequest(key, stores);
         try {
-            writeLock.lock();
-            writeToStore(key, "", true);
+            store.lock.writeLock().lock();
+            store.writeToStore(key, "", Tombstone.DEAD);
         } finally {
-            writeLock.unlock();
+            store.lock.writeLock().unlock();
         }
     }
 
     @Override
     public void clearStorage() {
-        for (int i = 0; i < NUM_PERSISTENT_STORES; i++) {
-            clearStore(i);
+        for (ConcurrentFileStore store : stores) {
+            try {
+                store.lock.writeLock().lock();
+                new FileWriter(store.storage).close();
+            } catch (IOException e) {
+                logger.error("Could not clear storage", e);
+            } finally {
+                store.lock.writeLock().unlock();
+            }
+        }
+    }
+
+    enum Tombstone {
+        VALID('V'),
+        DEAD('D');
+
+        final char marker;
+
+        Tombstone(char marker) {
+            this.marker = marker;
+        }
+    }
+
+    /**
+     * TODO: move out to its own KVStorage class, and add that keys index file?
+     */
+    static class ConcurrentFileStore {
+        final ReadWriteLock lock;
+        final File storage;
+
+        public ConcurrentFileStore(String directory, String filename) {
+            storage = new File(directory, filename);
+            lock = new ReentrantReadWriteLock();
+
+            try {
+                //noinspection ResultOfMethodCallIgnored
+                storage.getParentFile().mkdirs();
+                if (storage.createNewFile()) logger.info(String.format("Store created: %s", storage.getName()));
+                else logger.info(String.format("Store existing: %s", storage.getName()));
+            } catch (IOException e) {
+                throw new RuntimeException("Unable to create data stores", e);
+            }
+        }
+
+        public String readFromStore(String key) {
+            try (Stream<String> lines = Files.lines(storage.toPath())) {
+                final String latestEntry = lines.filter(line -> key.equals(line.substring(1, line.indexOf(KV_DELIMITER))))
+                        .reduce((a, b) -> b).orElse(null);
+                return (latestEntry == null || latestEntry.charAt(0) != Tombstone.VALID.marker) ? null
+                        : latestEntry.substring(latestEntry.indexOf(KV_DELIMITER) + 1);
+            } catch (IOException e) {
+                logger.error("An error occurred during read from store.", e);
+                return null;
+            }
+        }
+
+        public void writeToStore(String key, String value, Tombstone tombstone) {
+            try (PrintWriter writer = new PrintWriter(new FileWriter(storage, true))) {
+                writer.println(tombstone.marker + key + KV_DELIMITER + value);
+            } catch (IOException e) {
+                logger.error("An error occurred during write to store.", e);
+            }
+        }
+
+        /**
+         * @return a load balancer, potentially with a micro-optimization if nodeCount is a power of two
+         */
+        public static ILoadBalancer<ConcurrentFileStore> createLoadBalancer(int nodeCount) {
+            return ((nodeCount & (nodeCount - 1)) == 0) ? new PowerOfTwoLoadBalancer<>(nodeCount)
+                    : (key, nodes) -> nodes.get(Math.abs(key.hashCode()) % nodeCount);
+        }
+
+        private static class PowerOfTwoLoadBalancer<T> implements ILoadBalancer<T> {
+            final int mask;
+
+            PowerOfTwoLoadBalancer(int nodeCount) {
+                if ((nodeCount & (nodeCount - 1)) != 0)
+                    throw new IllegalArgumentException("Node count must be a power of two");
+                this.mask = nodeCount - 1;
+            }
+
+            @Override
+            public T balanceRequest(String key, List<T> nodes) {
+                return nodes.get(key.hashCode() & this.mask);
+            }
         }
     }
 }
