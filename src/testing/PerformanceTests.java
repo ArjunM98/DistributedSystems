@@ -64,7 +64,7 @@ public class PerformanceTests extends TestCase {
 
         int length = random.nextInt(maxlength);
 
-        for (int i = 0; i < length; i++) {
+        for (int i = 0; i <= length; i++) {
             int index = random.nextInt(alphaNumeric.length());
             char randomChar = alphaNumeric.charAt(index);
             sb.append(randomChar);
@@ -83,15 +83,17 @@ public class PerformanceTests extends TestCase {
             if (isGetIteration.test(iterations)) {
                 msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, iterations).getByteRepresentation().length;
                 long start = System.currentTimeMillis();
-                store.get(key);
+                final KVMessage res = store.get(key);
                 long finish = System.currentTimeMillis();
                 executionTime += (finish - start);
+                assertNotSame("GET failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
             } else {
                 msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, iterations).getByteRepresentation().length;
                 long start = System.currentTimeMillis();
-                store.put(key, value);
+                final KVMessage res = store.put(key, value);
                 long finish = System.currentTimeMillis();
                 executionTime += (finish - start);
+                assertNotSame("PUT failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
             }
         }
 
@@ -121,7 +123,7 @@ public class PerformanceTests extends TestCase {
             }
             System.out.printf("%s | Server | Average Server Throughput (KB/s) | %.3f\n", testName, serverAverageThroughput);
         } catch (Exception e) {
-            throw new RuntimeException("Threadpool error");
+            throw new RuntimeException("Threadpool encountered an error", e);
         } finally {
             SERVER.clearCache();
             SERVER.clearStorage();
