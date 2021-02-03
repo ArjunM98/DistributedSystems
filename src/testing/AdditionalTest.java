@@ -114,17 +114,24 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testDeletedKVs() throws Exception {
-        String key = "foo";
+        KVMessage response;
+        String key = "testDeletedKVs";
         String value = "foo";
 
-        kvClient.put(key, value);
-        kvClient.put(key, "null");
-        kvClient.put(key, "null");
-        kvClient.put(key, "null");
+        response = kvClient.put(key, value);
+        assertEquals(KVMessage.StatusType.PUT_SUCCESS, response.getStatus());
 
-        KVMessage response = kvClient.get(key);
+        response = kvClient.put(key, "null");
+        assertEquals(KVMessage.StatusType.DELETE_SUCCESS, response.getStatus());
 
-        assertEquals("", response.getValue());
+        response = kvClient.get(key);
+        assertTrue(response.getValue().isEmpty());
+
+        response = kvClient.put(key, "null");
+        assertEquals(KVMessage.StatusType.DELETE_ERROR, response.getStatus());
+
+        response = kvClient.get(key);
+        assertTrue(response.getValue().isEmpty());
     }
 
     /**
