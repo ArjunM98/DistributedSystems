@@ -126,9 +126,10 @@ public class KVClient implements IKVClient {
         Command(String description, int minArgCount, int maxArgCount, String... argNames) {
             this.minArgCount = minArgCount;
             this.maxArgCount = maxArgCount;
-            this.helpText = String.format("%s %s%s", this,
+            this.helpText = String.format("%s %s\n%s",
+                    this,
                     Arrays.stream(argNames).map(e -> String.format("<%s>", e)).collect(Collectors.joining(" ")),
-                    Arrays.stream(description.split("\n")).map(e -> String.format("\n\t%s", e)).collect(Collectors.joining())
+                    indented(description)
             );
         }
 
@@ -138,7 +139,7 @@ public class KVClient implements IKVClient {
          */
         static String usage(Command... commands) {
             commands = commands.length == 0 ? values() : commands;
-            return String.format("Usage:%s", Arrays.stream(commands).map(Command::commandUsage).collect(Collectors.joining("\n")));
+            return String.format("Usage:\n%s", Arrays.stream(commands).map(c -> indented(c.helpText)).collect(Collectors.joining("\n\n")));
         }
 
         /**
@@ -175,10 +176,11 @@ public class KVClient implements IKVClient {
         }
 
         /**
-         * @return usage string for a single command
+         * @param linesToIndent multi-line string to indent
+         * @return string with each line prepended with a tab character
          */
-        String commandUsage() {
-            return Arrays.stream(this.helpText.split("\n")).map(e -> String.format("\n\t%s", e)).collect(Collectors.joining());
+        private static String indented(String linesToIndent) {
+            return Arrays.stream(linesToIndent.split("\n")).map(e -> "\t" + e).collect(Collectors.joining("\n"));
         }
 
         /**

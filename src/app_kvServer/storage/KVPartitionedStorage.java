@@ -38,7 +38,7 @@ public class KVPartitionedStorage implements IKVStorage {
     }
 
     @Override
-    public void delete(String key) {
+    public void delete(String key) throws Exception {
         loadBalancer.balanceRequest(key, stores).delete(key);
     }
 

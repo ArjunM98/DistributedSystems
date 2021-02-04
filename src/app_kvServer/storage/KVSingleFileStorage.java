@@ -68,7 +68,7 @@ public class KVSingleFileStorage implements IKVStorage {
     }
 
     @Override
-    public void delete(String key) {
+    public void delete(String key) throws Exception {
         if (!inStorage(key)) throw new IllegalArgumentException("Key not found in storage");
         try {
             lock.writeLock().lock();
