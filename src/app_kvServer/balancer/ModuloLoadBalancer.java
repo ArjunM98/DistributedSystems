@@ -35,7 +35,7 @@ public class ModuloLoadBalancer<T> implements ILoadBalancer<T> {
     /**
      * @return best possible node balancer for the problem at hand
      */
-    public static <T> ModuloLoadBalancer<T> createLoadBalancer(int nodeCount) {
+    public static <T> ModuloLoadBalancer<T> create(int nodeCount) {
         return ((nodeCount & (nodeCount - 1)) == 0) ? new PowerOfTwoLoadBalancer<>(nodeCount) : new ModuloLoadBalancer<>(nodeCount);
     }
 }

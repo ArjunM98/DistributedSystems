@@ -12,7 +12,7 @@ import java.util.stream.IntStream;
  */
 public class KVPartitionedStorage implements IKVStorage {
     private static final int NUM_PERSISTENT_STORES = 8;
-    private static final ILoadBalancer<KVSingleFileStorage> loadBalancer = ModuloLoadBalancer.createLoadBalancer(NUM_PERSISTENT_STORES);
+    private static final ILoadBalancer<KVSingleFileStorage> loadBalancer = ModuloLoadBalancer.create(NUM_PERSISTENT_STORES);
 
     private final List<KVSingleFileStorage> stores;
 
