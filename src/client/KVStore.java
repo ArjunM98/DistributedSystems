@@ -8,9 +8,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class KVStore implements KVCommInterface {
@@ -44,83 +41,67 @@ public class KVStore implements KVCommInterface {
         clientSocket = new Socket(address, port);
         input = clientSocket.getInputStream();
         output = clientSocket.getOutputStream();
+        logger.info(String.format("New Connection established to %s:%d", address, port));
     }
 
     @Override
     public void disconnect() {
-        if (input == null && output == null && clientSocket == null) return;
         try {
-            List<String> errors = new ArrayList<>();
-
-            try {
-                Objects.requireNonNull(input).close();
-            } catch (Exception e) {
-                errors.add(String.format("InputStream (%s)", e.getMessage()));
+            if (clientSocket != null) {
+                clientSocket.close(); // will also close input and output
+                logger.info(String.format("Disconnected from %s:%d", address, port));
+            } else {
+                logger.info(String.format("Was not connected to %s:%d", address, port));
             }
-            try {
-                Objects.requireNonNull(output).close();
-            } catch (Exception e) {
-                errors.add(String.format("OutputStream (%s)", e.getMessage()));
-            }
-            try {
-                Objects.requireNonNull(clientSocket).close();
-            } catch (Exception e) {
-                errors.add(String.format("Socket (%s)", e.getMessage()));
-            }
+        } catch (IOException e) {
+            logger.error("Error disconnecting from session", e);
+        } finally {
             input = null;
             output = null;
             clientSocket = null;
-            if (!errors.isEmpty()) throw new IOException(String.join(", ", errors));
-        } catch (IOException e) {
-            logger.error("Error disconnecting from session", e);
         }
     }
 
     @Override
     public KVMessage put(String key, String value) throws Exception {
+        if (clientSocket == null) throw new IOException("Not connected to a KVServer");
+
         final long id = msgID.incrementAndGet();
-        value = value == null ? "null" : value;
-
-        if (malformedKey(key)) {
-            return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.ERROR_KEY, "Malformed Key", id);
-        } else if (malformedValue(value)) {
-            return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.ERROR_KEY, "Malformed Value", id);
-        }
-
         try {
-            KVMessageProto req = new KVMessageProto(KVMessage.StatusType.PUT, key, value, id);
-            req.writeMessageTo(output);
+            value = value == null ? "null" : value;
+            validateKey(key);
+            validateValue(value);
+            new KVMessageProto(KVMessage.StatusType.PUT, key, value, id).writeMessageTo(output);
             return new KVMessageProto(input);
-        } catch (IOException e) {
-            disconnect();
-            throw e;
+        } catch (Exception e) {
+            return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
         }
     }
 
     @Override
     public KVMessage get(String key) throws Exception {
+        if (clientSocket == null) throw new IOException("Not connected to a KVServer");
+
         final long id = msgID.incrementAndGet();
-
-        if (malformedKey(key)) {
-            return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.ERROR_KEY, "Malformed Key", id);
-        }
-
         try {
-            KVMessageProto req = new KVMessageProto(KVMessage.StatusType.GET, key, "" /* empty value */, id);
-            req.writeMessageTo(output);
+            validateKey(key);
+            new KVMessageProto(KVMessage.StatusType.GET, key, id).writeMessageTo(output);
             return new KVMessageProto(input);
-        } catch (IOException e) {
-            disconnect();
-            throw e;
+        } catch (Exception e) {
+            return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
         }
     }
 
-    private boolean malformedKey(String key) {
+    private void validateKey(String key) {
+        if (key.isEmpty())
+            throw new IllegalArgumentException("Key must not be empty");
+        if (key.length() > MAX_KEY_SIZE)
+            throw new IllegalArgumentException(String.format("Max key length is %d Bytes", MAX_KEY_SIZE));
         // TODO: should also check for no space but that would fail testing.InteractionTest.testGetUnsetValue()
-        return key.isEmpty() || key.length() >= MAX_KEY_SIZE;
     }
 
-    private boolean malformedValue(String value) {
-        return value.length() >= MAX_VALUE_SIZE;
+    private void validateValue(String value) {
+        if (value.length() > MAX_VALUE_SIZE)
+            throw new IllegalArgumentException(String.format("Max value length is %d Bytes", MAX_VALUE_SIZE));
     }
 }

@@ -44,6 +44,7 @@ public class KVServer extends Thread implements IKVServer {
         this.port = port;
         this.threadPool = Executors.newCachedThreadPool();
 
+        this.storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY);
         CacheStrategy cacheStrategy = CacheStrategy.None;
         try {
             cacheStrategy = CacheStrategy.valueOf(strategy);
@@ -53,7 +54,7 @@ public class KVServer extends Thread implements IKVServer {
             this.cache = IKVCache.newInstance(cacheStrategy, cacheSize);
         }
 
-        storage = new KVPartitionedStorage();
+        this.start();
     }
 
     @Override
@@ -263,7 +264,6 @@ public class KVServer extends Thread implements IKVServer {
 
         // 3. Run server and respond to ctrl-c and kill
         final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, cacheSize, policy);
-        kvServer.start();
         Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 }

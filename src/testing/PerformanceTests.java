@@ -50,7 +50,6 @@ public class PerformanceTests extends TestCase {
             for (int i = 0; i < NUM_CLIENTS; i++) CLIENTS.add(new KVStore("localhost", 50000));
 
             // 3. Start communications
-            SERVER.start();
             for (KVStore kvClient : CLIENTS) kvClient.connect();
         } catch (Exception e) {
             e.printStackTrace();
@@ -65,7 +64,7 @@ public class PerformanceTests extends TestCase {
 
         int length = random.nextInt(maxlength);
 
-        for (int i = 0; i < length; i++) {
+        for (int i = 0; i <= length; i++) {
             int index = random.nextInt(alphaNumeric.length());
             char randomChar = alphaNumeric.charAt(index);
             sb.append(randomChar);
@@ -82,17 +81,19 @@ public class PerformanceTests extends TestCase {
             iterations++;
             String key = test.key, value = test.value;
             if (isGetIteration.test(iterations)) {
-                msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, "", iterations).getByteRepresentation().length;
+                msgSize += new KVMessageProto(KVMessage.StatusType.GET, key, iterations).getByteRepresentation().length;
                 long start = System.currentTimeMillis();
-                store.get(key);
+                final KVMessage res = store.get(key);
                 long finish = System.currentTimeMillis();
                 executionTime += (finish - start);
+                assertNotSame("GET failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
             } else {
                 msgSize += new KVMessageProto(KVMessage.StatusType.PUT, key, value, iterations).getByteRepresentation().length;
                 long start = System.currentTimeMillis();
-                store.put(key, value);
+                final KVMessage res = store.put(key, value);
                 long finish = System.currentTimeMillis();
                 executionTime += (finish - start);
+                assertNotSame("PUT failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
             }
         }
 
@@ -112,15 +113,17 @@ public class PerformanceTests extends TestCase {
                 .collect(Collectors.toList());
 
         try {
+            double serverAverageThroughput = 0; // since requests are evenly distributed among clients, sum of averages is equal to average of sums
             for (Future<ThroughputResults> future : threadPool.invokeAll(threads)) {
                 ThroughputResults result = future.get();
-                // TODO: decide whether we want to print per thread or aggregate and print global values
-                System.out.printf("%s: Thread %d: Average Message Size: %.3f Bytes\n", testName, result.id, result.averageMessageSize);
-                System.out.printf("%s: Thread %d: Average Latency: %.3f ms\n", testName, result.id, result.averageLatency);
-                System.out.printf("%s: Thread %d: Average Throughput: %.3f KB/s\n", testName, result.id, result.averageThroughput);
+                System.out.printf("%s | Thread %d | Average Message Size (KB) | %.3f\n", testName, result.id, result.averageMessageSize / 1000);
+                System.out.printf("%s | Thread %d | Average Client Latency (ms) | %.3f\n", testName, result.id, result.averageLatency);
+                System.out.printf("%s | Thread %d | Average Client Throughput (KB/s) | %.3f\n", testName, result.id, result.averageThroughput);
+                serverAverageThroughput += result.averageThroughput;
             }
+            System.out.printf("%s | Server | Average Server Throughput (KB/s) | %.3f\n", testName, serverAverageThroughput);
         } catch (Exception e) {
-            throw new RuntimeException("Threadpool error");
+            throw new RuntimeException("Threadpool encountered an error", e);
         } finally {
             SERVER.clearCache();
             SERVER.clearStorage();

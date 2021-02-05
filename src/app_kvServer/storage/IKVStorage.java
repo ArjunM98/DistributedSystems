@@ -1,6 +1,8 @@
 package app_kvServer.storage;
 
 public interface IKVStorage {
+    public static String STORAGE_ROOT_DIRECTORY = "data";
+
     /**
      * Check if key is in storage.
      * NOTE: does not modify any other properties
