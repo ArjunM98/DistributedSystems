@@ -37,7 +37,7 @@ public class KVFifoCache implements IKVCache {
     }
 
     @Override
-    public void delete(String key) throws Exception {
+    public void delete(String key) {
     }
 
     @Override
