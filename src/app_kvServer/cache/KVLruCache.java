@@ -1,15 +1,23 @@
 package app_kvServer.cache;
 
 import app_kvServer.IKVServer;
-import org.apache.log4j.Logger;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class KVLruCache implements IKVCache {
-    private static final Logger logger = Logger.getRootLogger();
-    private final int cacheSize;
+    private final Map<String, String> cache;
+    private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public KVLruCache(int cacheSize) {
-        this.cacheSize = cacheSize;
-        logger.warn("KVLruCache not implemented");
+        this.cache = new LinkedHashMap<>(cacheSize, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                return size() > cacheSize;
+            }
+        };
     }
 
     @Override
@@ -19,28 +27,61 @@ public class KVLruCache implements IKVCache {
 
     @Override
     public int getCacheSize() {
-        return cacheSize;
+        try {
+            lock.readLock().lock();
+            return this.cache.size();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public boolean inCache(String key) {
-        return false;
+        try {
+            lock.readLock().lock();
+            return this.cache.containsKey(key);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public String getKV(String key) {
-        return null;
+        try {
+            lock.readLock().lock();
+            return this.cache.get(key);
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 
     @Override
     public void putKV(String key, String value) {
+        try {
+            lock.writeLock().lock();
+            this.cache.put(key, value);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public void delete(String key) {
+        try {
+            lock.writeLock().lock();
+            this.cache.remove(key);
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public void clearCache() {
+        try {
+            lock.writeLock().lock();
+            this.cache.clear();
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 }
