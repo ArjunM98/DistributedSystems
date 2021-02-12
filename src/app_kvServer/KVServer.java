@@ -94,14 +94,16 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public String getKV(String key) throws Exception {
-        if (inCache(key)) {
+        String value;
+
+        if ((value = cache.getKV(key)) != null) {
             logger.debug(String.format("Key '%s' found in cache", key));
-            return cache.getKV(key);
+            return value;
         }
 
-        if (inStorage(key)) {
+        if ((value = storage.getKV(key)) != null) {
             logger.debug(String.format("Key '%s' found in storage", key));
-            return storage.getKV(key);
+            return value;
         }
 
         throw new IllegalArgumentException(String.format("No mapping for key '%s'", key));
@@ -112,11 +114,14 @@ public class KVServer extends Thread implements IKVServer {
         // TODO: concurrency bugs in both cases where cache may be wrongly updated if storage fails
         // look into https://stackoverflow.com/q/5639870
         if ("null".equals(value)) {
+            // Delete from cache before deleting from storage so other clients don't use the old cached value
+            // and instead have to read from storage which is protected by a lock
             cache.delete(key);
             storage.delete(key);
         } else {
-            cache.putKV(key, value);
+            // Store BEFORE caching in case of any failures
             storage.putKV(key, value);
+            cache.putKV(key, value);
         }
     }
 

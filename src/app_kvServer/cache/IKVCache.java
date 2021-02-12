@@ -40,7 +40,7 @@ public interface IKVCache {
     /**
      * Delete key-value pair from cache
      */
-    public void delete(String key) throws Exception;
+    public void delete(String key);
 
     /**
      * Clear the local cache of the server
