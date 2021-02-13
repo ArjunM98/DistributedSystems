@@ -1,5 +1,6 @@
 package testing;
 
+import app_kvServer.IKVServer.CacheStrategy;
 import app_kvServer.KVServer;
 import client.KVStore;
 import junit.framework.TestCase;
@@ -29,6 +30,9 @@ public class PerformanceTests extends TestCase {
      */
     private static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2, NUM_CLIENTS = 8;
 
+    private static final int CACHE_SIZE = NUM_UNIQ_REQS;
+    private static final CacheStrategy CACHE_STRATEGY = CacheStrategy.FIFO;
+
     private static KVServer SERVER;
     private static List<KVStore> CLIENTS;
     private static List<KeyValuePair> REQUEST_TEST_SET;
@@ -45,7 +49,7 @@ public class PerformanceTests extends TestCase {
             REQUEST_TEST_SET.addAll(uniqueRequests);
 
             // 2. Client-server init
-            SERVER = new KVServer(50000, 10, "FIFO");
+            SERVER = new KVServer(50000, CACHE_SIZE, CACHE_STRATEGY.toString());
             CLIENTS = new ArrayList<>(NUM_CLIENTS);
             for (int i = 0; i < NUM_CLIENTS; i++) CLIENTS.add(new KVStore("localhost", 50000));
 
