@@ -12,7 +12,7 @@ public class KVFifoCache implements IKVCache {
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public KVFifoCache(int cacheSize) {
-        this.cache = new LinkedHashMap<>(cacheSize, 0.75f, false) {
+        this.cache = new LinkedHashMap<>(cacheSize, 0.75f /* load factor */, false /* ordering mode (i.e. do GETs count?) */) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
                 return size() > cacheSize;

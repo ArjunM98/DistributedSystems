@@ -12,7 +12,7 @@ public class KVLruCache implements IKVCache {
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
 
     public KVLruCache(int cacheSize) {
-        this.cache = new LinkedHashMap<>(cacheSize, 0.75f, true) {
+        this.cache = new LinkedHashMap<>(cacheSize, 0.75f /* load factor */, true /* ordering mode (i.e. do GETs count?) */) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
                 return size() > cacheSize;
