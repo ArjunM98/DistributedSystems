@@ -14,6 +14,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 
+import static org.junit.Assert.assertArrayEquals;
+
 public class AdditionalTest extends TestCase {
 
     private KVStore kvClient;
@@ -311,6 +313,9 @@ public class AdditionalTest extends TestCase {
         for (int i = 0; i < TEST_CACHE_SIZE; i++) assertEquals(NEW_VALUE_PREFIX + i, cache.getKV(NEW_KEY_PREFIX + i));
     }
 
+    /**
+     * See {@link #testOneNodeHashRing()}
+     */
     private void oneNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
@@ -321,6 +326,9 @@ public class AdditionalTest extends TestCase {
         assertEquals("Expected KVServer_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DC30DE0077EA6494D", 16)));
     }
 
+    /**
+     * See {@link #testTwoNodeHashRing()}
+     */
     private void twoNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
@@ -333,6 +341,9 @@ public class AdditionalTest extends TestCase {
         assertEquals("Expected Wraparound test -> KVServer_1", first, hashRing.getServer(new BigInteger("684CFAA5C6A75BD9FFFFFFFFFFFFFFFF", 16)));
     }
 
+    /**
+     * See {@link #testMultiNodeHashRing()}
+     */
     private void threeNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second, ECSNode third) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
@@ -401,5 +412,33 @@ public class AdditionalTest extends TestCase {
         twoNodeHashRingTestHelper(hashRing, first, second);
         hashRing.removeServer(second);
         oneNodeHashRingTestHelper(hashRing, first);
+    }
+
+    /**
+     * Tests {@link ECSHashRing} and {@link ECSNode} serialization/deserialization from ecs.config file format
+     */
+    @Test
+    public void testHashRingSerialization() {
+        // Simulate an ecs.config file's contents
+        final String ecsConfigFileBlob = "" +
+                "server1 127.0.0.1 50000\n" +
+                "server2 127.0.0.1 50001\n" +
+                "server3 127.0.0.1 50002\n" +
+                "server4 127.0.0.1 50003\n" +
+                "server5 127.0.0.1 50004\n" +
+                "server6 127.0.0.1 50005\n" +
+                "server7 127.0.0.1 50006\n" +
+                "server8 127.0.0.1 50007";
+
+        // Deserialization into ECSHashRing
+        final ECSHashRing hashRing = ECSHashRing.fromConfig(ecsConfigFileBlob);
+
+        // Serialization of ECSHashRing into string
+        final String serializedBlob = hashRing.toConfig();
+
+        // Put into sorted arrays for comparison
+        final String[] expected = ecsConfigFileBlob.lines().sorted().toArray(String[]::new);
+        final String[] actual = serializedBlob.lines().sorted().toArray(String[]::new);
+        assertArrayEquals(expected, actual);
     }
 }

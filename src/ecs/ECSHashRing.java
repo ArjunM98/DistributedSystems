@@ -5,12 +5,42 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 public class ECSHashRing {
     /**
      * {@link java.util.SortedMap} representing the hash ring of servers
      */
     private final TreeMap<BigInteger, ECSNode> hashRing = new TreeMap<>();
+
+    /**
+     * Parse and construct an ECSHashRing according to the example ecs.config file provided on Quercus
+     *
+     * @param config string with lines like "server1 localhost 50000"
+     * @return constructed ECSHashRing
+     * @throws IllegalArgumentException if lines are poorly formatted
+     */
+    public static ECSHashRing fromConfig(String config) {
+        return new ECSHashRing(config.lines().map(ECSNode::fromConfig).toArray(ECSNode[]::new));
+    }
+
+    /**
+     * Serialize this ECSHashRing into the format provided in ecs.config
+     *
+     * @return string representation of this node
+     */
+    public String toConfig() {
+        return this.hashRing.values().stream().map(ECSNode::toConfig).collect(Collectors.joining("\n"));
+    }
+
+    /**
+     * Construct an ECSHashRing with zero or more given nodes
+     *
+     * @param nodes ECSNodes to include in the hash ring
+     */
+    public ECSHashRing(ECSNode... nodes) {
+        for (ECSNode node : nodes) this.addServer(node);
+    }
 
     /**
      * @param payload is the string to hash

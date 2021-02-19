@@ -1,6 +1,8 @@
 package ecs;
 
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.List;
 
 public class ECSNode implements IECSNode {
     private final String nodeName, nodeHost;
@@ -10,7 +12,39 @@ public class ECSNode implements IECSNode {
     private BigInteger predecessorHash;
 
     /**
-     * Construct an ECSNode according to the example ecs.config file provided on Quercus
+     * Parse and construct an ECSNode according to the example ecs.config file provided on Quercus
+     *
+     * @param config string like "server1 localhost 50000"
+     * @return constructed ECSNode
+     * @throws IllegalArgumentException if line is poorly formatted
+     */
+    public static ECSNode fromConfig(String config) {
+        try {
+            final String DELIMITER = " ";
+            final List<String> tokens = Arrays.asList(config.split(DELIMITER));
+            if (tokens.size() < 3) throw new IllegalArgumentException("Expected 3 tokens");
+
+            return new ECSNode(
+                    String.join(DELIMITER, tokens.subList(0, tokens.size() - 2)),
+                    tokens.get(tokens.size() - 2),
+                    Integer.parseInt(tokens.get(tokens.size() - 1))
+            );
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Unable to parse config from " + config, e);
+        }
+    }
+
+    /**
+     * Serialize this ECSNode into the format provided in ecs.config
+     *
+     * @return string representation of this node
+     */
+    public String toConfig() {
+        return this.nodeName + " " + this.nodeHost + " " + this.nodePort;
+    }
+
+    /**
+     * Construct an ECSNode given explicit construction values
      *
      * @param nodeName human-readable identifier for the node
      * @param nodeHost IP/hostname of the node
