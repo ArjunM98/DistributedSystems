@@ -3,6 +3,8 @@ package testing;
 import app_kvServer.IKVServer.CacheStrategy;
 import app_kvServer.cache.IKVCache;
 import client.KVStore;
+import ecs.ECSHashRing;
+import ecs.ECSNode;
 import junit.framework.TestCase;
 import org.junit.Test;
 import shared.messages.KVMessage;
@@ -10,6 +12,7 @@ import shared.messages.KVMessageProto;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.math.BigInteger;
 
 public class AdditionalTest extends TestCase {
 
@@ -306,5 +309,97 @@ public class AdditionalTest extends TestCase {
 
         // And new keys are in
         for (int i = 0; i < TEST_CACHE_SIZE; i++) assertEquals(NEW_VALUE_PREFIX + i, cache.getKV(NEW_KEY_PREFIX + i));
+    }
+
+    private void oneNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first) {
+        // Examples inspired by Quercus diagram
+        assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
+        assertEquals("Expected Tuple_2 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
+        assertEquals("Expected Tuple_3 -> KVServer_1", first, hashRing.getServer(new BigInteger("684CFAA5C6A75BD90000000000000000", 16)));
+
+        // Edge cases test
+        assertEquals("Expected KVServer_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DC30DE0077EA6494D", 16)));
+    }
+
+    private void twoNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second) {
+        // Examples inspired by Quercus diagram
+        assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
+        assertEquals("Expected Tuple_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
+        assertEquals("Expected Tuple_3 -> KVServer_2", second, hashRing.getServer(new BigInteger("684CFAA5C6A75BD90000000000000000", 16)));
+
+        // Edge cases test
+        assertEquals("Expected KVServer_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DC30DE0077EA6494D", 16)));
+        assertEquals("Expected KVServer_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("684CFAA5C6A75BD9EDCD06058CA3F4E6", 16)));
+        assertEquals("Expected Wraparound test -> KVServer_1", first, hashRing.getServer(new BigInteger("684CFAA5C6A75BD9FFFFFFFFFFFFFFFF", 16)));
+    }
+
+    private void threeNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second, ECSNode third) {
+        // Examples inspired by Quercus diagram
+        assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
+        assertEquals("Expected Tuple_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
+        assertEquals("Expected Tuple_3 -> KVServer_2", second, hashRing.getServer(new BigInteger("684CFAA5C6A75BD90000000000000000", 16)));
+
+        // Edge cases test
+        assertEquals("Expected KVServer_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DC30DE0077EA6494D", 16)));
+        assertEquals("Expected KVServer_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("684CFAA5C6A75BD9EDCD06058CA3F4E6", 16)));
+        assertEquals("Expected OLD Wraparound test -> KVServer_3", third, hashRing.getServer(new BigInteger("684CFAA5C6A75BD9FFFFFFFFFFFFFFFF", 16)));
+        assertEquals("Expected NEW Wraparound test -> KVServer_1", first, hashRing.getServer(new BigInteger("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF", 16)));
+    }
+
+    /**
+     * Tests Hash Ring functionality for a single node -- no server
+     */
+    @Test
+    public void testOneNodeHashRing() {
+        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000);
+
+        hashRing.addServer(first); // 2B786438D2C6425DC30DE0077EA6494D
+
+        oneNodeHashRingTestHelper(hashRing, first);
+
+        // Test 0 node hash ring
+        hashRing.removeServer(first);
+        assertNull(hashRing.getServer("doesn't matter what this key is, it will return null"));
+    }
+
+    /**
+     * Tests Hash Ring functionality for two nodes -- no server
+     */
+    @Test
+    public void testTwoNodeHashRing() {
+        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000),
+                second = new ECSNode("KVServer_2", "localhost", 50005);
+
+        hashRing.addServer(first); // 2B786438D2C6425DC30DE0077EA6494D
+        hashRing.addServer(second); // 684CFAA5C6A75BD9EDCD06058CA3F4E6
+
+        // Test for 2 nodes and then test again as servers die
+        twoNodeHashRingTestHelper(hashRing, first, second);
+        hashRing.removeServer(second);
+        oneNodeHashRingTestHelper(hashRing, first);
+    }
+
+    /**
+     * Tests Hash Ring functionality for multiple nodes (3 is good enough to represent the general case) -- no server
+     */
+    @Test
+    public void testMultiNodeHashRing() {
+        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000),
+                second = new ECSNode("KVServer_2", "localhost", 50005),
+                third = new ECSNode("KVServer_3", "localhost", 55555);
+
+        hashRing.addServer(first); // 2B786438D2C6425DC30DE0077EA6494D
+        hashRing.addServer(second); // 684CFAA5C6A75BD9EDCD06058CA3F4E6
+        hashRing.addServer(third); // D2ED1C9BD26CB54BBD7B8F71203A0654
+
+        // Test for 3 nodes and then test again as servers die
+        threeNodeHashRingTestHelper(hashRing, first, second, third);
+        hashRing.removeServer(third);
+        twoNodeHashRingTestHelper(hashRing, first, second);
+        hashRing.removeServer(second);
+        oneNodeHashRingTestHelper(hashRing, first);
     }
 }
