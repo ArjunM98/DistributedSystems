@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 
 public class ECSHashRing {
     /**
-     * {@link java.util.SortedMap} representing the hash ring of servers
+     * A {@link java.util.NavigableMap} representing the hash ring of servers
      */
     private final TreeMap<BigInteger, ECSNode> hashRing = new TreeMap<>();
 
