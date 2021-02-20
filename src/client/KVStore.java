@@ -5,14 +5,11 @@ import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.Socket;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class KVStore implements KVCommInterface {
-    public static final int MAX_KEY_SIZE = 20;
-    public static final int MAX_VALUE_SIZE = 120 * 1024;
+    public static final int MAX_KEY_SIZE = 20, MAX_VALUE_SIZE = 120 * 1024;
 
     private static final Logger logger = Logger.getRootLogger();
 
@@ -20,8 +17,6 @@ public class KVStore implements KVCommInterface {
     private final int port;
 
     private Socket clientSocket;
-    private OutputStream output;
-    private InputStream input;
 
     private final AtomicLong msgID = new AtomicLong(KVMessageProto.START_MESSAGE_ID);
 
@@ -39,8 +34,6 @@ public class KVStore implements KVCommInterface {
     @Override
     public void connect() throws Exception {
         clientSocket = new Socket(address, port);
-        input = clientSocket.getInputStream();
-        output = clientSocket.getOutputStream();
         logger.info(String.format("New Connection established to %s:%d", address, port));
     }
 
@@ -48,7 +41,7 @@ public class KVStore implements KVCommInterface {
     public void disconnect() {
         try {
             if (clientSocket != null) {
-                clientSocket.close(); // will also close input and output
+                clientSocket.close();
                 logger.info(String.format("Disconnected from %s:%d", address, port));
             } else {
                 logger.info(String.format("Was not connected to %s:%d", address, port));
@@ -56,8 +49,6 @@ public class KVStore implements KVCommInterface {
         } catch (IOException e) {
             logger.error("Error disconnecting from session", e);
         } finally {
-            input = null;
-            output = null;
             clientSocket = null;
         }
     }
@@ -71,8 +62,8 @@ public class KVStore implements KVCommInterface {
             value = value == null ? "null" : value;
             validateKey(key);
             validateValue(value);
-            new KVMessageProto(KVMessage.StatusType.PUT, key, value, id).writeMessageTo(output);
-            return new KVMessageProto(input);
+            new KVMessageProto(KVMessage.StatusType.PUT, key, value, id).writeMessageTo(clientSocket.getOutputStream());
+            return new KVMessageProto(clientSocket.getInputStream());
         } catch (Exception e) {
             return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
         }
@@ -85,8 +76,8 @@ public class KVStore implements KVCommInterface {
         final long id = msgID.incrementAndGet();
         try {
             validateKey(key);
-            new KVMessageProto(KVMessage.StatusType.GET, key, id).writeMessageTo(output);
-            return new KVMessageProto(input);
+            new KVMessageProto(KVMessage.StatusType.GET, key, id).writeMessageTo(clientSocket.getOutputStream());
+            return new KVMessageProto(clientSocket.getInputStream());
         } catch (Exception e) {
             return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
         }
