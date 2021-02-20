@@ -1,5 +1,6 @@
 package app_kvServer.storage;
 
+import app_kvServer.KVServerException;
 import app_kvServer.balancer.ILoadBalancer;
 import app_kvServer.balancer.ModuloLoadBalancer;
 
@@ -28,7 +29,7 @@ public class KVPartitionedStorage implements IKVStorage {
     }
 
     @Override
-    public String getKV(String key) {
+    public String getKV(String key) throws KVServerException {
         return loadBalancer.balanceRequest(key, stores).getKV(key);
     }
 
@@ -38,7 +39,7 @@ public class KVPartitionedStorage implements IKVStorage {
     }
 
     @Override
-    public void delete(String key) throws Exception {
+    public void delete(String key) throws KVServerException {
         loadBalancer.balanceRequest(key, stores).delete(key);
     }
 

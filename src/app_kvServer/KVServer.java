@@ -7,6 +7,7 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
+import shared.messages.KVMessage;
 
 import java.io.IOException;
 import java.net.*;
@@ -93,35 +94,50 @@ public class KVServer extends Thread implements IKVServer {
     }
 
     @Override
-    public String getKV(String key) throws Exception {
-        String value;
+    public String getKV(String key) throws KVServerException {
+        try {
+            String value;
 
-        if ((value = cache.getKV(key)) != null) {
-            logger.debug(String.format("Key '%s' found in cache", key));
-            return value;
+            if ((value = cache.getKV(key)) != null) {
+                logger.debug(String.format("Key '%s' found in cache", key));
+                return value;
+            }
+
+            if ((value = storage.getKV(key)) != null) {
+                cache.putKV(key, value);
+                logger.debug(String.format("Key '%s' found in storage", key));
+                return value;
+            }
+
+            throw new KVServerException(String.format("No mapping for key '%s'", key), KVMessage.StatusType.GET_ERROR);
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing key '%s'", key), e, KVMessage.StatusType.FAILED);
         }
-
-        if ((value = storage.getKV(key)) != null) {
-            logger.debug(String.format("Key '%s' found in storage", key));
-            return value;
-        }
-
-        throw new IllegalArgumentException(String.format("No mapping for key '%s'", key));
     }
 
     @Override
-    public void putKV(String key, String value) throws Exception {
-        // TODO: concurrency bugs in both cases where cache may be wrongly updated if storage fails
-        // look into https://stackoverflow.com/q/5639870
-        if ("null".equals(value)) {
+    public void putKV(String key, String value) throws KVServerException {
+        // TODO: consider locking cache and storage together https://stackoverflow.com/q/5639870
+        if ("null".equals(value)) try {
             // Delete from cache before deleting from storage so other clients don't use the old cached value
             // and instead have to read from storage which is protected by a lock
             cache.delete(key);
             storage.delete(key);
-        } else {
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing key '%s'", key), e, KVMessage.StatusType.FAILED);
+        }
+        else try {
             // Store BEFORE caching in case of any failures
             storage.putKV(key, value);
             cache.putKV(key, value);
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing key '%s'", key), e, KVMessage.StatusType.FAILED);
         }
     }
 

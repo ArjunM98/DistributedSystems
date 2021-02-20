@@ -1,7 +1,10 @@
 package app_kvServer.storage;
 
+import app_kvServer.KVServerException;
+import shared.messages.KVMessage.StatusType;
+
 public interface IKVStorage {
-    public static String STORAGE_ROOT_DIRECTORY = "data";
+    public static final String STORAGE_ROOT_DIRECTORY = "data";
 
     /**
      * Check if key is in storage.
@@ -15,23 +18,23 @@ public interface IKVStorage {
      * Get the value associated with the key
      *
      * @return value associated with key
-     * @throws Exception when key not in the key range of the server
+     * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
      */
-    public String getKV(String key) throws Exception;
+    public String getKV(String key) throws KVServerException;
 
     /**
      * Put the key-value pair into storage
      *
-     * @throws Exception on failure e.g. when key not in the key range of the server
+     * @throws KVServerException e.g. for {@link StatusType#PUT_ERROR}, {@link StatusType#FAILED}
      */
-    public void putKV(String key, String value) throws Exception;
+    public void putKV(String key, String value) throws KVServerException;
 
     /**
      * Delete key-value pair from storage
      *
-     * @throws Exception on failure e.g. when key not in the key range of the server
+     * @throws KVServerException e.g. for {@link StatusType#DELETE_ERROR}, {@link StatusType#FAILED}
      */
-    public void delete(String key) throws Exception;
+    public void delete(String key) throws KVServerException;
 
     /**
      * Clear the storage of the server

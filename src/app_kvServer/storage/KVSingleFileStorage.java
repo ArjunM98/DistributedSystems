@@ -1,6 +1,8 @@
 package app_kvServer.storage;
 
+import app_kvServer.KVServerException;
 import org.apache.log4j.Logger;
+import shared.messages.KVMessage;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -10,6 +12,8 @@ import java.nio.file.Files;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Stream;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * A tombstone-based key-value store that enables fast writes and concurrent reads.
@@ -44,14 +48,20 @@ public class KVSingleFileStorage implements IKVStorage {
 
     @Override
     public boolean inStorage(String key) {
-        return getKV(key) != null;
+        try {
+            return getKV(key) != null;
+        } catch (KVServerException e) {
+            return false;
+        }
     }
 
     @Override
-    public String getKV(String key) {
+    public String getKV(String key) throws KVServerException {
         try {
             lock.readLock().lock();
-            return readFromStore(key);
+            return requireNonNull(readFromStore(key));
+        } catch (Exception e) {
+            throw new KVServerException("Key not found in storage", KVMessage.StatusType.GET_ERROR);
         } finally {
             lock.readLock().unlock();
         }
@@ -68,8 +78,8 @@ public class KVSingleFileStorage implements IKVStorage {
     }
 
     @Override
-    public void delete(String key) throws Exception {
-        if (!inStorage(key)) throw new IllegalArgumentException("Key not found in storage");
+    public void delete(String key) throws KVServerException {
+        if (!inStorage(key)) throw new KVServerException("Key not found in storage", KVMessage.StatusType.DELETE_ERROR);
         try {
             lock.writeLock().lock();
             writeToStore(key, "", Tombstone.DEAD);
