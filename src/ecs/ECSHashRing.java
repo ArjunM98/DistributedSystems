@@ -1,10 +1,13 @@
 package ecs;
 
+import app_kvECS.IECSClient;
+
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ECSHashRing {
@@ -57,6 +60,25 @@ public class ECSHashRing {
     }
 
     /**
+     * Return a Map of name to nodes.
+     *
+     * @return functionality for {@link IECSClient#getNodes()}
+     */
+    public Map<String, IECSNode> getAllNodes() {
+        return hashRing.values().stream().collect(Collectors.toMap(ECSNode::getNodeName, Function.identity()));
+    }
+
+    /**
+     * Return a node by its name
+     *
+     * @param name node name
+     * @return node if found else null
+     */
+    public ECSNode getNodeByName(String name) {
+        return hashRing.values().stream().filter(e -> e.getNodeName().equals(name)).findFirst().orElse(null);
+    }
+
+    /**
      * Wrapper for {@link #getServer(BigInteger)}
      *
      * @param payload string holding key or ip:port
@@ -87,8 +109,12 @@ public class ECSHashRing {
      * Add a server to the hash ring. Update is done in-place.
      *
      * @param server to add to ring
+     * @return true if the hash ring has changed as a result of calling this method
      */
-    public void addServer(ECSNode server) {
+    public boolean addServer(ECSNode server) {
+        // Already present, this is a no-op
+        if (hashRing.containsKey(server.getNodeHash())) return false;
+
         if (hashRing.isEmpty()) {
             hashRing.put(server.getNodeHash(), server);
         } else {
@@ -105,14 +131,20 @@ public class ECSHashRing {
             ECSNode predecessor = lowerEntry == null ? hashRing.lastEntry().getValue() : lowerEntry.getValue();
             server.setPredecessor(predecessor);
         }
+
+        return hashRing.containsKey(server.getNodeHash());
     }
 
     /**
      * Remove a server from the hash ring. Update is done in-place.
      *
      * @param server to remove from ring
+     * @return true if the hash ring has changed as a result of calling this method
      */
-    public void removeServer(ECSNode server) {
+    public boolean removeServer(ECSNode server) {
+        // Not present, this is a no-op
+        if (!hashRing.containsKey(server.getNodeHash())) return false;
+
         if (hashRing.size() <= 1) {
             hashRing.remove(server.getNodeHash());
         } else {
@@ -128,5 +160,7 @@ public class ECSHashRing {
             if (predecessor == null) predecessor = hashRing.lastEntry().getValue();
             successor.setPredecessor(predecessor);
         }
+
+        return true;
     }
 }
