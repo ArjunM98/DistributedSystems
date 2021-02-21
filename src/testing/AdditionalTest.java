@@ -146,7 +146,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testMaxKeyError() throws Exception {
-        String goodKey = "x".repeat(KVStore.MAX_KEY_SIZE);
+        String goodKey = "x".repeat(KVMessageProto.MAX_KEY_SIZE);
         String badKey = goodKey + "x";
 
         assertNotSame(KVMessage.StatusType.FAILED, kvClient.get(goodKey).getStatus());
@@ -158,7 +158,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testMaxValueError() throws Exception {
-        String goodValue = "x".repeat(KVStore.MAX_VALUE_SIZE);
+        String goodValue = "x".repeat(KVMessageProto.MAX_VALUE_SIZE);
         String badValue = goodValue + "x";
 
         assertNotSame(KVMessage.StatusType.FAILED, kvClient.put("goodkey", goodValue).getStatus());

@@ -11,12 +11,21 @@ import java.io.IOException;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 public class KVStore implements KVCommInterface {
-    public static final int MAX_KEY_SIZE = 20, MAX_VALUE_SIZE = 120 * 1024;
+    /**
+     * MAX_RETRIES: number of times to re-attempt a SERVER_NOT_RESPONSIBLE message, in case metadata is rapidly changing
+     * or the desired server is down and the request had to be sent to a backup.
+     * <p>
+     * RETRY_BACKOFF_MILLIS: after the first try, we'll immediately try again. If that doesn't work, we'll wait
+     * RETRY_BACKOFF_MILLIS before trying again, and then 2x that, then 3x that, and so on until MAX_RETRIES have been
+     * attempted. This is to give backup servers time to ingest metadata updates and downed servers time to recover.
+     */
+    private static final int MAX_RETRIES = 3, RETRY_BACKOFF_MILLIS = 3000;
 
     private static final Logger logger = Logger.getRootLogger();
 
@@ -40,7 +49,6 @@ public class KVStore implements KVCommInterface {
         for (IECSNode node : hashRing.getAllNodes().values()) getConnection(((ECSNode) node));
     }
 
-
     /**
      * Get a socket connecting us to this server
      *
@@ -58,6 +66,33 @@ public class KVStore implements KVCommInterface {
             serverConnections.put(node.getConnectionString(), socket);
         }
         return socket;
+    }
+
+    /**
+     * Get a socket connecting us to ideally the desired server, or else another node in the ring (i.e. if our
+     * desired server is unreachable). If no servers are reachable, fail.
+     *
+     * @param node preferred server to connect to
+     * @return new or pre-existing socket to the KV Service
+     * @throws IOException if no servers are reachable
+     */
+    private Socket getConnectionOrBackup(ECSNode node) throws IOException {
+        try {
+            return getConnection(node);
+        } catch (IOException e1) {
+            logger.error("Cannot connect to desired server", e1);
+            final Socket backupSocket = hashRing.getAllNodes().values().stream()
+                    .map(e -> {
+                        try {
+                            return getConnection(((ECSNode) e));
+                        } catch (IOException e2) {
+                            logger.error("Cannot connect to backup server", e2);
+                            return null;
+                        }
+                    }).filter(Objects::nonNull).findAny().orElse(null);
+            if (backupSocket == null) throw new IOException("KV Service unreachable");
+            return backupSocket;
+        }
     }
 
     @Override
@@ -82,42 +117,66 @@ public class KVStore implements KVCommInterface {
 
     @Override
     public KVMessage put(String key, String value) throws IOException {
-        while (true) {
+        long messageId = msgID.get();
+        for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
+            // 1. Get a server from our pool to contact
             final ECSNode server = hashRing.getServer(key);
             if (server == null) throw new IOException("Not connected to a KVServer");
-            final Socket clientSocket = getConnection(server);
+            final Socket clientSocket = getConnectionOrBackup(server);
 
-            final long id = msgID.incrementAndGet();
+            // 2. Make the request
+            messageId = msgID.incrementAndGet();
             try {
-                new KVMessageProto(KVMessage.StatusType.PUT, validatedKey(key), validatedValue(value), id).writeMessageTo(clientSocket.getOutputStream());
+                new KVMessageProto(KVMessage.StatusType.PUT, validatedKey(key), validatedValue(value), messageId).writeMessageTo(clientSocket.getOutputStream());
                 final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
                     updateMetadata(ECSHashRing.fromConfig(response.getValue()));
                 } else return response;
             } catch (Exception e) {
-                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
+            }
+
+            // 3. If the request was not satisfied, (potentially) wait before trying again
+            try {
+                Thread.sleep(iTry * RETRY_BACKOFF_MILLIS);
+            } catch (InterruptedException e) {
+                logger.debug("Sleep interrupted", e);
             }
         }
+        // 4. Could not satisfy request after multiple attempts
+        return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
     @Override
     public KVMessage get(String key) throws IOException {
-        while (true) {
+        long messageId = msgID.get();
+        for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
+            // 1. Get a server from our pool to contact
             final ECSNode server = hashRing.getServer(key);
             if (server == null) throw new IOException("Not connected to a KVServer");
-            final Socket clientSocket = getConnection(server);
+            final Socket clientSocket = getConnectionOrBackup(server);
 
-            final long id = msgID.incrementAndGet();
+            // 2. Make the request
+            messageId = msgID.incrementAndGet();
             try {
-                new KVMessageProto(KVMessage.StatusType.GET, validatedKey(key), id).writeMessageTo(clientSocket.getOutputStream());
+                new KVMessageProto(KVMessage.StatusType.GET, validatedKey(key), messageId).writeMessageTo(clientSocket.getOutputStream());
                 final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
                     updateMetadata(ECSHashRing.fromConfig(response.getValue()));
                 } else return response;
             } catch (Exception e) {
-                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), id);
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
+            }
+
+            // 3. If the request was not satisfied, (potentially) wait before trying again
+            try {
+                Thread.sleep(iTry * RETRY_BACKOFF_MILLIS);
+            } catch (InterruptedException e) {
+                logger.debug("Sleep interrupted", e);
             }
         }
+        // 4. Could not satisfy request after multiple attempts
+        return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
     private void updateMetadata(ECSHashRing newConfig) throws IOException {
@@ -141,16 +200,16 @@ public class KVStore implements KVCommInterface {
     private String validatedKey(String key) {
         if (key.isEmpty())
             throw new IllegalArgumentException("Key must not be empty");
-        if (key.length() > MAX_KEY_SIZE)
-            throw new IllegalArgumentException(String.format("Max key length is %d Bytes", MAX_KEY_SIZE));
+        if (key.length() > KVMessageProto.MAX_KEY_SIZE)
+            throw new IllegalArgumentException(String.format("Max key length is %d Bytes", KVMessageProto.MAX_KEY_SIZE));
         // TODO: should also check for no space but that would fail testing.InteractionTest.testGetUnsetValue()
         return key;
     }
 
     private String validatedValue(String value) {
         value = value == null ? "null" : value;
-        if (value.length() > MAX_VALUE_SIZE)
-            throw new IllegalArgumentException(String.format("Max value length is %d Bytes", MAX_VALUE_SIZE));
+        if (value.length() > KVMessageProto.MAX_VALUE_SIZE)
+            throw new IllegalArgumentException(String.format("Max value length is %d Bytes", KVMessageProto.MAX_VALUE_SIZE));
         return value;
     }
 }
