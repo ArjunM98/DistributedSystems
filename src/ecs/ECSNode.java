@@ -7,6 +7,7 @@ import java.util.List;
 public class ECSNode implements IECSNode {
     private final String nodeName, nodeHost;
     private final int nodePort;
+    private ServerStatus serverStatus;
 
     private final BigInteger nodeHash;
     private BigInteger predecessorHash;
@@ -54,6 +55,7 @@ public class ECSNode implements IECSNode {
         this.nodeName = nodeName;
         this.nodeHost = nodeHost;
         this.nodePort = nodePort;
+        this.serverStatus = ServerStatus.OFFLINE;
 
         this.nodeHash = ECSHashRing.computeHash(this.getConnectionString());
         this.setPredecessor(this);
@@ -140,4 +142,15 @@ public class ECSNode implements IECSNode {
     public String[] getNodeHashRange() {
         return new String[]{this.predecessorHash.toString(16), this.nodeHash.toString(16)};
     }
+
+    @Override
+    public ServerStatus getNodeStatus() {
+        return serverStatus;
+    }
+
+    @Override
+    public void setNodeStatus(ServerStatus status) {
+        serverStatus = status;
+    }
+
 }
