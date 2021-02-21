@@ -5,6 +5,8 @@ import app_kvECS.IECSClient;
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.Function;
@@ -42,7 +44,7 @@ public class ECSHashRing {
      * @param nodes ECSNodes to include in the hash ring
      */
     public ECSHashRing(ECSNode... nodes) {
-        for (ECSNode node : nodes) this.addServer(node);
+        this.addAll(Arrays.asList(nodes));
     }
 
     /**
@@ -162,5 +164,24 @@ public class ECSHashRing {
         }
 
         return true;
+    }
+
+    /**
+     * Add multiple servers to this hash ring
+     *
+     * @param servers to add to the ring
+     * @return true if the hash ring has changed as a result of calling this method (does not mean all add operations were successful though)
+     */
+    public boolean addAll(Collection<? extends ECSNode> servers) {
+        boolean result = false;
+        for (ECSNode server : servers) result |= addServer(server);
+        return result;
+    }
+
+    /**
+     * Clear the hash ring
+     */
+    public void clear() {
+        hashRing.clear();
     }
 }
