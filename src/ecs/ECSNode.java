@@ -97,8 +97,16 @@ public class ECSNode implements IECSNode {
      * @return true if {@link #predecessorHash} < hash <= {@link #nodeHash}
      */
     private boolean isResponsibleForHash(BigInteger hash) {
-        return this.nodeHash.compareTo(hash) >= 0
-                && this.predecessorHash.compareTo(hash) < 0;
+        switch (this.nodeHash.compareTo(this.predecessorHash)) {
+            case 1: // Regular hash ring check
+                return (this.nodeHash.compareTo(hash) >= 0 && this.predecessorHash.compareTo(hash) < 0);
+            case 0: // Single node hash ring -->
+                return (this.nodeHash.equals(this.predecessorHash));
+            case -1: // Wraparound case
+                return (this.nodeHash.compareTo(hash) >= 0 || this.predecessorHash.compareTo(hash) > 0);
+        }
+
+        return false;
     }
 
     /**
