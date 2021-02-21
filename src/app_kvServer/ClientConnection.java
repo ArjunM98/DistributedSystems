@@ -70,7 +70,7 @@ public class ClientConnection implements Runnable {
                 throw new IOException("Client disconnected", e);
             }
 
-            logger.debug("Responding to request " + reqId);
+            logger.debug("Responding to request " + reqId + " on " + server.getPort());
             switch (req.getStatus()) {
                 case GET:
                     return handleGet(req);
@@ -79,8 +79,13 @@ public class ClientConnection implements Runnable {
             }
             throw new KVServerException("Bad request type", StatusType.FAILED);
         } catch (KVServerException e) {
-            logger.warn("Error processing request " + reqId, e);
-            return new KVMessageProto(e.getErrorCode(), KVMessageProto.SERVER_ERROR_KEY, e.getMessage(), reqId);
+            logger.warn(String.format("Error processing request %d (%s): %s", reqId, e.getErrorCode(), e.getMessage()));
+            return new KVMessageProto(
+                    e.getErrorCode(),
+                    KVMessageProto.SERVER_ERROR_KEY,
+                    e.getErrorCode() == StatusType.SERVER_NOT_RESPONSIBLE ? server.getMetadata() : e.getMessage(),
+                    reqId
+            );
         }
     }
 

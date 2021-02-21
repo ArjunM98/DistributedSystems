@@ -3,6 +3,8 @@ package app_kvServer;
 import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.KVPartitionedStorage;
+import ecs.ECSHashRing;
+import ecs.ECSNode;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -28,7 +30,21 @@ public class KVServer extends Thread implements IKVServer {
 
     private final ExecutorService threadPool;
     private ServerSocket serverSocket;
+
+    /**
+     * TODO (@ravi): encapsulate and provide this functionality from some kind of server state class that deals with all the ECS things
+     * Also will need to break this into at least the 3 following cases:
+     * - isAlive - server is alive
+     * - isStarted - server is alive and allowed to respond to clients
+     * - isWriteLocked - see {@link shared.messages.KVMessage.StatusType#SERVER_WRITE_LOCK}
+     */
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
+
+    /**
+     * TODO (@ravi): encapsulate these two and properly init/update/etc.
+     */
+    private final ECSNode myEcsNode;
+    private final ECSHashRing allEcsNodes;
 
     /**
      * Start KV Server at given port
@@ -54,6 +70,10 @@ public class KVServer extends Thread implements IKVServer {
         } finally {
             this.cache = IKVCache.newInstance(cacheStrategy, cacheSize);
         }
+
+        // TODO: init and reinit these two properly somewhere else
+        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port));
+        myEcsNode = allEcsNodes.getServer(String.format("localhost:%d", port));
 
         this.start();
     }
@@ -95,6 +115,14 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public String getKV(String key) throws KVServerException {
+        if (key.equals("todo: do a stopped state check here")) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (!myEcsNode.isResponsibleForKey(key)) {
+            throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
+        }
+
         try {
             String value;
 
@@ -119,6 +147,18 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public void putKV(String key, String value) throws KVServerException {
+        if (key.equals("todo: do a stopped state check here")) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (key.equals("todo: do a write lock check here")) {
+            throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
+        }
+
+        if (!myEcsNode.isResponsibleForKey(key)) {
+            throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
+        }
+
         // TODO: consider locking cache and storage together https://stackoverflow.com/q/5639870
         if ("null".equals(value)) try {
             // Delete from cache before deleting from storage so other clients don't use the old cached value
@@ -199,7 +239,7 @@ public class KVServer extends Thread implements IKVServer {
 
         try {
             serverSocket.close();
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.error("Unable to cleanly terminate socket", e);
         }
 
@@ -221,11 +261,18 @@ public class KVServer extends Thread implements IKVServer {
 
         try {
             serverSocket.close();
-        } catch (IOException e) {
+        } catch (Exception e) {
             logger.error("Unable to cleanly terminate socket", e);
         }
 
         this.clearCache();
+    }
+
+    /**
+     * TODO: idk if this is the implementation we'll be using once ECS module is in place
+     */
+    public String getMetadata() {
+        return this.allEcsNodes.toConfig();
     }
 
     /**
