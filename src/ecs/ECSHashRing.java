@@ -12,6 +12,9 @@ import java.util.TreeMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+/**
+ * TODO: consider rewriting as a proper {@link Collection} of {@link ECSNode}
+ */
 public class ECSHashRing {
     /**
      * A {@link java.util.NavigableMap} representing the hash ring of servers
@@ -108,6 +111,39 @@ public class ECSHashRing {
     }
 
     /**
+     * Return the server which would precede the passed-in server in the hash ring
+     *
+     * @param server (does not have to be in the ring) to get predecessor for
+     * @return predecessor (or potential predecessor) for server, or server if hash ring is empty
+     */
+    public ECSNode getPredecessor(ECSNode server) {
+        if (hashRing.isEmpty()) return server;
+
+        Map.Entry<BigInteger, ECSNode> predecessorEntry = hashRing.lowerEntry(server.getNodeHash());
+        if (predecessorEntry == null) predecessorEntry = hashRing.lastEntry();
+        return predecessorEntry.getValue();
+    }
+
+    /**
+     * Return the server which would succeed the passed-in server in the hash ring
+     *
+     * @param server (does not have to be in the ring) to get successor for
+     * @return successor (or potential successor) for server, or server if hash ring is empty
+     */
+    public ECSNode getSuccessor(ECSNode server) {
+        if (hashRing.isEmpty()) return server;
+
+        final BigInteger nodeHash = server.getNodeHash();
+        if (hashRing.containsKey(nodeHash)) {
+            Map.Entry<BigInteger, ECSNode> successorEntry = hashRing.higherEntry(nodeHash);
+            if (successorEntry == null) successorEntry = hashRing.firstEntry();
+            return successorEntry.getValue();
+        } else {
+            return getServer(nodeHash);
+        }
+    }
+
+    /**
      * Add a server to the hash ring. Update is done in-place.
      *
      * @param server to add to ring
@@ -120,17 +156,9 @@ public class ECSHashRing {
         if (hashRing.isEmpty()) {
             hashRing.put(server.getNodeHash(), server);
         } else {
-            // Tell successor its no longer responsible for this hash
-            ECSNode successor = getServer(server.getNodeHash());
-            if (successor == null) successor = server;
-            successor.setPredecessor(server);
-
-            // Add to hash ring
+            final ECSNode successor = getSuccessor(server), predecessor = getPredecessor(server);
             hashRing.put(server.getNodeHash(), server);
-
-            // Tell this server its lower bound for hashes
-            final Map.Entry<BigInteger, ECSNode> lowerEntry = hashRing.lowerEntry(server.getNodeHash());
-            ECSNode predecessor = lowerEntry == null ? hashRing.lastEntry().getValue() : lowerEntry.getValue();
+            successor.setPredecessor(server);
             server.setPredecessor(predecessor);
         }
 
@@ -150,16 +178,8 @@ public class ECSHashRing {
         if (hashRing.size() <= 1) {
             hashRing.remove(server.getNodeHash());
         } else {
-            // Get predecessor ready
-            final Map.Entry<BigInteger, ECSNode> lowerEntry = hashRing.lowerEntry(server.getNodeHash());
-            ECSNode predecessor = lowerEntry == null ? null : lowerEntry.getValue();
-
-            // Remove from hash ring
+            final ECSNode successor = getSuccessor(server), predecessor = getPredecessor(server);
             hashRing.remove(server.getNodeHash());
-
-            // Tell successor it's again responsible for this hash range
-            ECSNode successor = getServer(server.getNodeHash());
-            if (predecessor == null) predecessor = hashRing.lastEntry().getValue();
             successor.setPredecessor(predecessor);
         }
 
@@ -189,9 +209,16 @@ public class ECSHashRing {
     }
 
     /**
-     * Clear the hash ring
+     * See {@link Collection#clear()}
      */
     public void clear() {
         hashRing.clear();
+    }
+
+    /**
+     * See {@link Collection#size()}
+     */
+    public int size() {
+        return hashRing.size();
     }
 }
