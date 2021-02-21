@@ -167,6 +167,16 @@ public class ECSHashRing {
     }
 
     /**
+     * Wrapper for {@link #addAll(Collection)}
+     *
+     * @param other the other hash ring to merge into this one
+     * @return true if the hash ring has changed as a result of calling this method (does not mean all add operations were successful though)
+     */
+    public boolean addAll(ECSHashRing other) {
+        return this.addAll(other.hashRing.values());
+    }
+
+    /**
      * Add multiple servers to this hash ring
      *
      * @param servers to add to the ring
