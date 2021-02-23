@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package shared.messages.proto;
+
+option java_package = "shared.messages.proto";
+option java_outer_classname = "ProtoKVAdminMessage";
+
+/* Defining the message format */
+message KVAdminProto {
+  string sender = 1;
+  uint32 status = 2;
+  string value = 3;
+  string start = 4;
+  string end = 5;
+  string address = 6;
+}
