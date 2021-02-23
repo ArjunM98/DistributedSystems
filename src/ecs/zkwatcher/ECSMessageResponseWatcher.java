@@ -1,7 +1,6 @@
 package ecs.zkwatcher;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import ecs.ECS;
 import ecs.IECSNode;
 import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
@@ -40,7 +39,7 @@ public class ECSMessageResponseWatcher {
 
     public ECSMessageResponseWatcher(ZooKeeperService zk, IECSNode node) {
         this.zk = zk;
-        this.zNode = ECS.ZK_SERVERS + "/" + node.getNodeName();
+        this.zNode = ZooKeeperService.ZK_SERVERS + "/" + node.getNodeName();
     }
 
     public synchronized KVAdminMessageProto sendMessage(KVAdminMessageProto request, long timeout, TimeUnit timeUnit) throws IOException {

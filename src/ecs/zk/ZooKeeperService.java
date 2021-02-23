@@ -9,21 +9,21 @@ import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 
 public class ZooKeeperService {
-
+    public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
     private static final Logger logger = Logger.getRootLogger();
-    private ZooKeeper zooKeeper;
+    private final ZooKeeper zooKeeper;
 
     /**
      * Establishes Connection to the Zookeeper Ensemble
      *
-     * @param url - Zookeeper Ensemble Location (host:port)
+     * @param connStr - Zookeeper Ensemble Location (host:port)
      * @throws IOException
      * @throws InterruptedException
      */
-    public ZooKeeperService(final String url) throws IOException, InterruptedException {
+    public ZooKeeperService(final String connStr) throws IOException, InterruptedException {
         logger.info("Establishing Zookeeper Connection ...");
         CountDownLatch connectionLatch = new CountDownLatch(1);
-        zooKeeper = new ZooKeeper(url, 2000 /* sessionTimeout */, watchedEvent -> {
+        zooKeeper = new ZooKeeper(connStr, 2000 /* sessionTimeout */, watchedEvent -> {
             if (watchedEvent.getState() == Watcher.Event.KeeperState.SyncConnected) {
                 connectionLatch.countDown();
             }
@@ -88,6 +88,7 @@ public class ZooKeeperService {
 
     /**
      * getData sync associated with a specific node without setting a watch
+     *
      * @param node
      * @return
      * @throws KeeperException
@@ -99,6 +100,7 @@ public class ZooKeeperService {
 
     /**
      * setData sync associated with a specific code without setting a watch
+     *
      * @param node
      * @return
      * @throws KeeperException
@@ -123,6 +125,7 @@ public class ZooKeeperService {
 
     /**
      * delete specified node
+     *
      * @param node
      * @throws KeeperException
      * @throws InterruptedException

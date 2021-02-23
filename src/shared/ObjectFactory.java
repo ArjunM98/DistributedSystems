@@ -6,7 +6,6 @@ import app_kvECS.ECSClient;
 import app_kvECS.IECSClient;
 import app_kvServer.IKVServer;
 import app_kvServer.KVServer;
-import ecs.ECS;
 
 public final class ObjectFactory {
     /*
@@ -23,7 +22,10 @@ public final class ObjectFactory {
         return new KVServer(port, cacheSize, strategy);
     }
 
-    public static IECSClient createECSClientObject(String path){
-        return new ECSClient(path);
+    /*
+     * Creates an ECSClient object for auto-testing purposes
+     */
+    public static IECSClient createECSClientObject(String path, String zooKeeperConnectionString) {
+        return new ECSClient(path, zooKeeperConnectionString);
     }
 }

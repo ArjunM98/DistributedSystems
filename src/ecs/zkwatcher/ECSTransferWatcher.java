@@ -1,6 +1,6 @@
 package ecs.zkwatcher;
 
-import ecs.ECS;
+import app_kvECS.ECSClient;
 import ecs.IECSNode;
 import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
@@ -33,7 +33,7 @@ public class ECSTransferWatcher {
         ExecutorService threadPool = Executors.newFixedThreadPool(2);
         List<Callable<KVAdminMessageProto>> threads = Arrays.stream((new IECSNode[]{transferFrom, transferTo}))
                 .map(node -> (Callable<KVAdminMessageProto>)
-                        () -> new ECSMessageResponseWatcher(zk, node).sendMessage(new KVAdminMessageProto(ECS.ECS_NAME,
+                        () -> new ECSMessageResponseWatcher(zk, node).sendMessage(new KVAdminMessageProto(ECSClient.ECS_NAME,
                                 KVAdminMessage.AdminStatusType.TRANSFER_BEGIN), 5000, TimeUnit.MILLISECONDS))
                 .collect(Collectors.toList());
 

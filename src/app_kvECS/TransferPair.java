@@ -1,4 +1,6 @@
-package ecs;
+package app_kvECS;
+
+import ecs.IECSNode;
 
 public class TransferPair {
 
@@ -20,5 +22,7 @@ public class TransferPair {
         return this.transferTo;
     }
 
-    public String[] getTransferRange() {return this.transferRange; }
+    public String[] getTransferRange() {
+        return this.transferRange;
+    }
 }
