@@ -2,6 +2,7 @@ package testing;
 
 import app_kvServer.IKVServer.CacheStrategy;
 import app_kvServer.KVServer;
+import app_kvServer.storage.IKVStorage.KVPair;
 import client.KVStore;
 import junit.framework.TestCase;
 import logger.LogSetup;
@@ -35,7 +36,7 @@ public class PerformanceTests extends TestCase {
 
     private static KVServer SERVER;
     private static List<KVStore> CLIENTS;
-    private static List<KeyValuePair> REQUEST_TEST_SET;
+    private static List<KVPair> REQUEST_TEST_SET;
 
     static {
         try {
@@ -43,10 +44,10 @@ public class PerformanceTests extends TestCase {
             new LogSetup("logs/testing/test.log", Level.ERROR);
 
             REQUEST_TEST_SET = new ArrayList<>(NUM_UNIQ_REQS * REQ_DUPLICITY);
-            List<KeyValuePair> uniqueRequests = IntStream.range(0, NUM_UNIQ_REQS)
-                    .mapToObj(i -> new KeyValuePair(generateRandomString(KVMessageProto.MAX_KEY_SIZE), generateRandomString(KVMessageProto.MAX_VALUE_SIZE)))
+            List<KVPair> uniqueRequests = IntStream.range(0, NUM_UNIQ_REQS)
+                    .mapToObj(i -> new KVPair(generateRandomString(KVMessageProto.MAX_KEY_SIZE), generateRandomString(KVMessageProto.MAX_VALUE_SIZE)))
                     .collect(Collectors.toList());
-            REQUEST_TEST_SET.addAll(uniqueRequests);
+            for (int i = 0; i < REQ_DUPLICITY; i++) REQUEST_TEST_SET.addAll(uniqueRequests);
 
             // 2. Client-server init
             SERVER = new KVServer(50000, CACHE_SIZE, CACHE_STRATEGY.toString());
@@ -77,11 +78,11 @@ public class PerformanceTests extends TestCase {
         return sb.toString();
     }
 
-    public ThroughputResults singleClientPerformance(KVStore store, List<KeyValuePair> tests, Predicate<Integer> isGetIteration) throws Exception {
+    public ThroughputResults singleClientPerformance(KVStore store, List<KVPair> tests, Predicate<Integer> isGetIteration) throws Exception {
         int msgSize = 0, executionTime = 0, iterations = 0;
 
         Collections.shuffle(tests);
-        for (KeyValuePair test : tests) {
+        for (KVPair test : tests) {
             iterations++;
             String key = test.key, value = test.value;
             if (isGetIteration.test(iterations)) {
@@ -186,15 +187,6 @@ public class PerformanceTests extends TestCase {
     public void test90Get10PutPerformance() {
         System.out.println("90/10 Get-Put Ratio");
         putGetPerformance("90/10", i -> i % 10 > 0);
-    }
-
-    private static class KeyValuePair {
-        final String key, value;
-
-        KeyValuePair(String key, String value) {
-            this.key = key;
-            this.value = value;
-        }
     }
 
     private static class ThroughputResults {

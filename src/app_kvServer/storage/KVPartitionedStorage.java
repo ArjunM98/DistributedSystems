@@ -5,8 +5,10 @@ import app_kvServer.balancer.ILoadBalancer;
 import app_kvServer.balancer.ModuloLoadBalancer;
 
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 /**
  * An orchestrator for {@link KVSingleFileStorage} to increase concurrency
@@ -46,6 +48,14 @@ public class KVPartitionedStorage implements IKVStorage {
     @Override
     public void clearStorage() {
         stores.forEach(KVSingleFileStorage::clearStorage);
+    }
+
+    @Override
+    public Stream<KVPair> openKvStream(Predicate<KVPair> filter) {
+        return stores.stream()
+                .map(store -> store.openKvStream(filter))
+                .reduce(Stream::concat)
+                .orElseGet(Stream::empty);
     }
 }
 

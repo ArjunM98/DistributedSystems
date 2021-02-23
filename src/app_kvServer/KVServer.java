@@ -2,6 +2,7 @@ package app_kvServer;
 
 import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
+import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
@@ -15,11 +16,14 @@ import java.io.IOException;
 import java.net.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Predicate;
+import java.util.stream.Stream;
 
 public class KVServer extends Thread implements IKVServer {
     private static final Logger logger = Logger.getRootLogger();
@@ -273,6 +277,35 @@ public class KVServer extends Thread implements IKVServer {
      */
     public String getMetadata() {
         return this.allEcsNodes.toConfig();
+    }
+
+    /**
+     * Stream all KVs from (a temp snapshot of) storage. Remember to call {@link Stream#close()} on the resulting
+     * stream after it's been processed (see {@link IKVStorage#openKvStream(Predicate)} for explanation)
+     *
+     * @return a stream of serialized {@link KVPair}s
+     */
+    public Stream<String> openKvStream(Predicate<KVPair> filter) {
+        return storage.openKvStream(filter).map(KVPair::serialize);
+    }
+
+    /**
+     * Bulk PUT operation given a stream of serialized {@link KVPair}s
+     *
+     * @param serializedKvStream like the results from {@link #openKvStream(Predicate)} but could be any serialized kv
+     *                           string stream e.g. one coming out of a socket
+     */
+    public void putAllFromKvStream(Stream<String> serializedKvStream) {
+        this.clearCache();
+        try (serializedKvStream) {
+            serializedKvStream.map(KVPair::deserialize).filter(Objects::nonNull).forEach(kv -> {
+                try {
+                    storage.putKV(kv.key, kv.value);
+                } catch (KVServerException e) {
+                    logger.info(String.format("Error ingesting kv '%s'", kv.key));
+                }
+            });
+        }
     }
 
     /**
