@@ -44,7 +44,7 @@ public class PerformanceTests extends TestCase {
 
             REQUEST_TEST_SET = new ArrayList<>(NUM_UNIQ_REQS * REQ_DUPLICITY);
             List<KeyValuePair> uniqueRequests = IntStream.range(0, NUM_UNIQ_REQS)
-                    .mapToObj(i -> new KeyValuePair(generateRandomString(KVStore.MAX_KEY_SIZE), generateRandomString(KVStore.MAX_VALUE_SIZE)))
+                    .mapToObj(i -> new KeyValuePair(generateRandomString(KVMessageProto.MAX_KEY_SIZE), generateRandomString(KVMessageProto.MAX_VALUE_SIZE)))
                     .collect(Collectors.toList());
             REQUEST_TEST_SET.addAll(uniqueRequests);
 

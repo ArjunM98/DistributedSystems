@@ -10,6 +10,7 @@ import java.util.Objects;
 public class KVMessageProto implements KVMessage {
     public static final long START_MESSAGE_ID = 1, UNKNOWN_MESSAGE_ID = 0;
     public static final String SERVER_ERROR_KEY = "SERVER_ERROR", CLIENT_ERROR_KEY = "CLIENT_ERROR";
+    public static final int MAX_KEY_SIZE = 20, MAX_VALUE_SIZE = 120 * 1024;
 
     private final KVProto msg;
 

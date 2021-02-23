@@ -2,7 +2,7 @@ package app_kvServer;
 
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.log4j.Logger;
-import shared.messages.KVMessage;
+import shared.messages.KVMessage.StatusType;
 import shared.messages.KVMessageProto;
 
 import java.io.IOException;
@@ -41,15 +41,8 @@ public class ClientConnection implements Runnable {
     public void run() {
         try (clientSocket; InputStream input = clientSocket.getInputStream(); OutputStream output = clientSocket.getOutputStream()) {
             while (true) try {
-                KVMessageProto request = new KVMessageProto(input);
-                logger.debug("Responding to request " + request.getId());
-                respondToRequest(request, output);
-            } catch (InvalidProtocolBufferException | IllegalArgumentException e) {
-                String message = "Bad message: " + e.getMessage();
-                logger.info(message, e);
-                new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.SERVER_ERROR_KEY, message, KVMessageProto.UNKNOWN_MESSAGE_ID)
-                        .writeMessageTo(output); // TODO: Note this might throw again, in which case should we assume dead client?
-            } catch (IOException | NullPointerException e) {
+                handleRequest(input).writeMessageTo(output);
+            } catch (IOException e) {
                 logger.info("Client disconnected: " + e.getMessage());
                 break;
             }
@@ -59,41 +52,101 @@ public class ClientConnection implements Runnable {
     }
 
     /**
-     * Method receive a KVMessage using this socket.
+     * Method to handle receiving a KVMessage using this socket.
      *
-     * @throws IOException some I/O error regarding the input stream
+     * @return KVMessageProto response to send to client
+     * @throws IOException on client disconnected
      */
-    private void respondToRequest(KVMessageProto req, OutputStream output) throws IOException {
-        switch (req.getStatus()) {
-            case GET:
-                try {
-                    String value = server.getKV(req.getKey());
-                    new KVMessageProto(KVMessage.StatusType.GET_SUCCESS, req.getKey(), value, req.getId()).writeMessageTo(output);
-                } catch (Exception e) {
-                    new KVMessageProto(KVMessage.StatusType.GET_ERROR, req.getKey(), req.getId()).writeMessageTo(output);
-                }
-                break;
-            case PUT:
-                if ("null".equals(req.getValue())) try {
-                    server.putKV(req.getKey(), req.getValue());
-                    new KVMessageProto(KVMessage.StatusType.DELETE_SUCCESS, req.getKey(), req.getValue(), req.getId()).writeMessageTo(output);
-                } catch (Exception e) {
-                    new KVMessageProto(KVMessage.StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId()).writeMessageTo(output);
-                }
-                else try {
-                    // TODO: concurrency bug here could cause two clients to both receive "PUT_SUCCESS"
-                    KVMessage.StatusType putStatus = (server.inCache(req.getKey()) || server.inStorage(req.getKey()))
-                            ? KVMessage.StatusType.PUT_UPDATE
-                            : KVMessage.StatusType.PUT_SUCCESS;
+    private KVMessageProto handleRequest(InputStream input) throws IOException {
+        KVMessageProto req;
+        long reqId = KVMessageProto.UNKNOWN_MESSAGE_ID;
+        try {
+            try {
+                req = new KVMessageProto(input);
+                reqId = req.getId();
+            } catch (InvalidProtocolBufferException e) {
+                throw new KVServerException("Malformed request", StatusType.FAILED);
+            } catch (IOException | NullPointerException e) {
+                throw new IOException("Client disconnected", e);
+            }
 
-                    server.putKV(req.getKey(), req.getValue());
-                    new KVMessageProto(putStatus, req.getKey(), req.getValue(), req.getId()).writeMessageTo(output);
-                } catch (Exception e) {
-                    new KVMessageProto(KVMessage.StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId()).writeMessageTo(output);
-                }
-                break;
-            default:
-                throw new IllegalArgumentException("Bad message");
+            logger.debug("Responding to request " + reqId + " on " + server.getPort());
+            switch (req.getStatus()) {
+                case GET:
+                    return handleGet(req);
+                case PUT:
+                    return "null".equals(req.getValue()) ? handleDelete(req) : handlePut(req);
+            }
+            throw new KVServerException("Bad request type", StatusType.FAILED);
+        } catch (KVServerException e) {
+            logger.warn(String.format("Error processing request %d (%s): %s", reqId, e.getErrorCode(), e.getMessage()));
+            return new KVMessageProto(
+                    e.getErrorCode(),
+                    KVMessageProto.SERVER_ERROR_KEY,
+                    e.getErrorCode() == StatusType.SERVER_NOT_RESPONSIBLE ? server.getMetadata() : e.getMessage(),
+                    reqId
+            );
+        }
+    }
+
+    /**
+     * Helps clean up {@link #handleRequest(InputStream)}
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error (e.g. {@link StatusType#SERVER_NOT_RESPONSIBLE})
+     */
+    private KVMessageProto handleGet(KVMessageProto req) throws KVServerException {
+        try {
+            return new KVMessageProto(StatusType.GET_SUCCESS, req.getKey(), server.getKV(req.getKey()), req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.GET_ERROR) throw e;
+            return new KVMessageProto(StatusType.GET_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.GET_ERROR, req.getKey(), req.getId());
+        }
+    }
+
+    /**
+     * Helps clean up {@link #handleRequest(InputStream)}
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error (e.g. {@link StatusType#SERVER_NOT_RESPONSIBLE})
+     */
+    private KVMessageProto handlePut(KVMessageProto req) throws KVServerException {
+        try {
+            // TODO: concurrency bug here could cause two clients to both receive "PUT_SUCCESS"
+            final StatusType putStatus = (server.inCache(req.getKey()) || server.inStorage(req.getKey()))
+                    ? StatusType.PUT_UPDATE
+                    : StatusType.PUT_SUCCESS;
+
+            server.putKV(req.getKey(), req.getValue());
+            return new KVMessageProto(putStatus, req.getKey(), req.getValue(), req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.PUT_ERROR) throw e;
+            return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
+        }
+    }
+
+    /**
+     * Helps clean up {@link #handleRequest(InputStream)}
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error (e.g. {@link StatusType#SERVER_NOT_RESPONSIBLE})
+     */
+    private KVMessageProto handleDelete(KVMessageProto req) throws KVServerException {
+        try {
+            server.putKV(req.getKey(), req.getValue());
+            return new KVMessageProto(StatusType.DELETE_SUCCESS, req.getKey(), req.getValue(), req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.DELETE_ERROR) throw e;
+            return new KVMessageProto(StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
         }
     }
 }
