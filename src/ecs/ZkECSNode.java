@@ -1,9 +1,18 @@
 package ecs;
 
+import ecs.zk.ZooKeeperService;
+import org.apache.log4j.Logger;
+import shared.messages.KVAdminMessageProto;
+
+import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 /**
  * A stateful, zookeeper-aware, ECSNode
  */
 public class ZkECSNode extends ECSNode {
+    private static final Logger logger = Logger.getRootLogger();
     private ServerStatus serverStatus;
 
     /**
@@ -48,6 +57,72 @@ public class ZkECSNode extends ECSNode {
      */
     public void setNodeStatus(ServerStatus status) {
         serverStatus = status;
+    }
+
+    /**
+     * @return the znode this server should be listening on
+     */
+    public String getZnode() {
+        return ZooKeeperService.ZK_SERVERS + "/" + this.getNodeName();
+    }
+
+    /**
+     * Send a message to this ECS node i.e. KVServer
+     *
+     * @param zk       - connection to ZooKeeper through which to send the message
+     * @param request  - message to send to node VIA its znode
+     * @param timeout  - max time to wait for a response
+     * @param timeUnit - unit for timeout
+     * @return server's response as a {@link KVAdminMessageProto}
+     * @throws IOException if could not send or receive a message
+     */
+    public synchronized KVAdminMessageProto sendMessage(ZooKeeperService zk, KVAdminMessageProto request, long timeout, TimeUnit timeUnit) throws IOException {
+        // 0. Prepare sync/async flow
+        final String zNode = this.getZnode();
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        // 1. Send the message
+        try {
+            zk.setData(zNode, request.getBytes());
+            zk.watchDataOnce(zNode, latch::countDown);
+        } catch (Exception e) {
+            throw new IOException("Could not send message", e);
+        }
+
+        // 2. Wait for the response
+        boolean resRecv = false;
+        try {
+            resRecv = !latch.await(timeout, timeUnit);
+        } catch (InterruptedException e) {
+            logger.warn("Unable to wait for latch to count down");
+        }
+
+        // 3. Extract response
+        KVAdminMessageProto res = null;
+        try {
+            res = new KVAdminMessageProto(zk.getData(zNode));
+        } catch (IOException e) {
+            logger.warn("Unable to read response", e);
+        }
+
+        // 4. Return response
+        if (res == null || !resRecv) throw new IOException("Did not receive a response");
+        return res;
+    }
+
+    /**
+     * Send a message to this ECS node i.e. KVServer
+     *
+     * @param zk         connection to ZooKeeper through which to send the message
+     * @param onDeletion callback to run when this node gets deleted
+     * @throws IOException if could not send or receive a message
+     */
+    public void registerOnDeletionListener(ZooKeeperService zk, Runnable onDeletion) throws IOException {
+        try {
+            zk.watchDeletion(getZnode(), onDeletion);
+        } catch (Exception e) {
+            throw new IOException("Unable to set deletion watcher", e);
+        }
     }
 
     /**

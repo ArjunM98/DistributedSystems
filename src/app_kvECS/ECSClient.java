@@ -5,12 +5,7 @@ import ecs.ECSNode;
 import ecs.IECSNode;
 import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
-import ecs.zkwatcher.ECSMessageResponseWatcher;
-import ecs.zkwatcher.ECSRootChange;
-import ecs.zkwatcher.ECSServerDeletionWatcher;
-import ecs.zkwatcher.ECSTransferWatcher;
 import org.apache.log4j.Logger;
-import org.apache.zookeeper.KeeperException;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
@@ -26,7 +21,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static app_kvECS.TransferPair.TransferType;
+import static app_kvECS.HashRangeTransfer.TransferType;
 import static ecs.ZkECSNode.ServerStatus;
 
 public class ECSClient implements IECSClient {
@@ -35,7 +30,7 @@ public class ECSClient implements IECSClient {
     public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m2-server.jar").toString();
 
     /* Zookeeper Client Instance */
-    private ZooKeeperService zk;
+    private final ZooKeeperService zk;
 
     /* Holds all available nodes available */
     private Queue<ZkECSNode> ECSNodeRepo;
@@ -54,7 +49,7 @@ public class ECSClient implements IECSClient {
      * @param filePath                  - ECSConfig file
      * @param zooKeeperConnectionString - like localhost:2181
      */
-    public ECSClient(String filePath, String zooKeeperConnectionString) {
+    public ECSClient(String filePath, String zooKeeperConnectionString) throws IOException {
         logger.info("Initializing ECS Server");
 
         /* Holds original file information passed to ECS on initialization */
@@ -70,25 +65,19 @@ public class ECSClient implements IECSClient {
             logger.error("Unable to initialize ECS", e);
         }
 
-        try {
-            // Establish Connection to Zookeeper Ensemble
-            zk = new ZooKeeperService(zooKeeperConnectionString);
+        // Establish Connection to Zookeeper Ensemble
+        zk = new ZooKeeperService(zooKeeperConnectionString);
 
-            // Establish root nodes
-            if (!zk.nodeExists(ZooKeeperService.ZK_SERVERS)) {
-                zk.createNode(ZooKeeperService.ZK_SERVERS, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
-            }
-            if (!zk.nodeExists(ZooKeeperService.ZK_METADATA)) {
-                zk.createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
-            }
-
-            // Set up watch on the children of root
-            ECSRootChange rootWatcher = new ECSRootChange(this, zk);
-            zk.getChildren(ZooKeeperService.ZK_SERVERS, rootWatcher.childrenChanges, rootWatcher.processChangedChildren);
-
-        } catch (IOException | InterruptedException | KeeperException e) {
-            logger.error("Unable to setup zookeeper connection", e);
+        // Establish root nodes
+        if (!zk.nodeExists(ZooKeeperService.ZK_SERVERS)) {
+            zk.createNode(ZooKeeperService.ZK_SERVERS, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
         }
+        if (!zk.nodeExists(ZooKeeperService.ZK_METADATA)) {
+            zk.createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
+        }
+
+        // Set up watch on the children of root
+        zk.watchChildrenForever(ZooKeeperService.ZK_SERVERS, this::initializeNewServer);
 
         logger.info("ECS Server Initialized");
     }
@@ -111,12 +100,11 @@ public class ECSClient implements IECSClient {
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STARTING) {
                 try {
-                    KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, server).sendMessage(
-                            new KVAdminMessageProto(ECS_NAME,
-                                    KVAdminMessage.AdminStatusType.INIT,
-                                    newHashRing.toConfig()),
-                            5000,
-                            TimeUnit.MILLISECONDS);
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.INIT,
+                            newHashRing.toConfig()
+                    ), 5000, TimeUnit.MILLISECONDS);
                     if (ack.getStatus() != KVAdminMessage.AdminStatusType.INIT_ACK) throw new IOException();
                 } catch (IOException e) {
                     newHashRing.removeServer(server);
@@ -126,7 +114,7 @@ public class ECSClient implements IECSClient {
         }
 
         // Go through servers and calculate data transfers and transfer the appropriate data
-        final List<TransferPair> transferList = calculateNodeTransfers();
+        final List<HashRangeTransfer> transferList = calculateNodeTransfers();
         executeTransfers(transferList);
 
         // Send start command to starting servers
@@ -134,10 +122,10 @@ public class ECSClient implements IECSClient {
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STARTING) {
                 try {
-                    KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, server).sendMessage(
-                            new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.START),
-                            5000,
-                            TimeUnit.MILLISECONDS);
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.START
+                    ), 5000, TimeUnit.MILLISECONDS);
                     if (ack.getStatus() != KVAdminMessage.AdminStatusType.START_ACK) throw new IOException();
                     server.setNodeStatus(ServerStatus.RUNNING);
                 } catch (IOException e) {
@@ -151,13 +139,12 @@ public class ECSClient implements IECSClient {
         zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toString().getBytes(StandardCharsets.UTF_8));
 
         // Release write lock
-        for (TransferPair transfer : transferList) {
+        for (HashRangeTransfer transfer : transferList) {
             try {
-                KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, transfer.getSourceNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.UNLOCK),
-                        5000,
-                        TimeUnit.MILLISECONDS);
+                KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.UNLOCK
+                ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.UNLOCK_ACK) throw new IOException();
             } catch (IOException e) {
                 newHashRing.removeServer(transfer.getSourceNode());
@@ -191,11 +178,10 @@ public class ECSClient implements IECSClient {
         for (ZkECSNode server : hashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.RUNNING) {
                 try {
-                    KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, server).sendMessage(
-                            new KVAdminMessageProto(ECS_NAME,
-                                    KVAdminMessage.AdminStatusType.STOP),
-                            5000,
-                            TimeUnit.MILLISECONDS);
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.STOP
+                    ), 5000, TimeUnit.MILLISECONDS);
                     if (ack.getStatus() != KVAdminMessage.AdminStatusType.STOP_ACK) throw new IOException();
                 } catch (IOException e) {
                     stopSuccessful = false;
@@ -220,11 +206,10 @@ public class ECSClient implements IECSClient {
         // Send shutdown command
         for (ZkECSNode server : hashRing.getAllNodes()) {
             try {
-                KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, server).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.SHUTDOWN),
-                        5000,
-                        TimeUnit.MILLISECONDS);
+                KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.SHUTDOWN
+                ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
             } catch (IOException e) {
                 successfulShutdown = false;
@@ -362,24 +347,23 @@ public class ECSClient implements IECSClient {
         }
 
         // Calculate transfers and watch transfer process
-        final List<TransferPair> transferList = calculateNodeTransfers();
+        final List<HashRangeTransfer> transferList = calculateNodeTransfers();
         executeTransfers(transferList);
 
         // Update data
         try {
             zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toString().getBytes(StandardCharsets.UTF_8));
-        } catch (KeeperException | InterruptedException e) {
+        } catch (IOException e) {
             logger.warn("Unable to update metadata", e);
         }
 
         // Release write lock
-        for (TransferPair transfer : transferList) {
+        for (HashRangeTransfer transfer : transferList) {
             try {
-                KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, transfer.getDestinationNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.UNLOCK),
-                        5000,
-                        TimeUnit.MILLISECONDS);
+                KVAdminMessageProto ack = transfer.getDestinationNode().sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.UNLOCK
+                ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.UNLOCK_ACK) throw new IOException();
             } catch (IOException e) {
                 newHashRing.removeServer(transfer.getSourceNode());
@@ -388,13 +372,12 @@ public class ECSClient implements IECSClient {
         }
 
         // shutdown respective servers
-        for (TransferPair transfer : transferList) {
+        for (HashRangeTransfer transfer : transferList) {
             try {
-                KVAdminMessageProto ack = new ECSMessageResponseWatcher(zk, transfer.getSourceNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.SHUTDOWN),
-                        5000,
-                        TimeUnit.MILLISECONDS);
+                KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.SHUTDOWN
+                ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
             } catch (IOException e) {
                 newHashRing.removeServer(transfer.getSourceNode());
@@ -420,44 +403,10 @@ public class ECSClient implements IECSClient {
      *
      * @param transferList - Object representing transfer information between two servers
      */
-    private void executeTransfers(List<TransferPair> transferList) {
-        KVAdminMessageProto ack;
-        for (TransferPair transfer : transferList) {
+    private void executeTransfers(List<HashRangeTransfer> transferList) {
+        for (HashRangeTransfer transfer : transferList) {
             try {
-                // Lock server I'm sending data to
-                ack = new ECSMessageResponseWatcher(zk, transfer.getLockingNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.LOCK),
-                        5000,
-                        TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.LOCK_ACK)
-                    throw new IOException("Unable to acquire lock");
-
-                // Ask for transfer port available on deleted server
-                ack = new ECSMessageResponseWatcher(zk, transfer.getDestinationNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.TRANSFER_REQ),
-                        5000,
-                        TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK)
-                    throw new IOException("Unable to acquire port information");
-                String availablePort = ack.getValue();
-
-                // Send port information and range to new server
-                ack = new ECSMessageResponseWatcher(zk, transfer.getSourceNode()).sendMessage(
-                        new KVAdminMessageProto(ECS_NAME,
-                                KVAdminMessage.AdminStatusType.MOVE_DATA,
-                                transfer.getTransferHashRange(),
-                                transfer.getDestinationNode().getNodeHost() + ":" + availablePort),
-                        5000,
-                        TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.MOVE_DATA_ACK)
-                    throw new IOException("Unable to initiate transfer procedure");
-
-                // Initiate transfer monitor
-                boolean fin = new ECSTransferWatcher(zk, transfer.getSourceNode(), transfer.getDestinationNode()).transferListener(2, TimeUnit.HOURS);
-                if (!fin) throw new IOException("Unable to complete transfer procedure");
-
+                transfer.execute(zk);
             } catch (IOException e) {
                 newHashRing.removeServer(transfer.getSourceNode());
                 newHashRing.removeServer(transfer.getDestinationNode());
@@ -473,17 +422,17 @@ public class ECSClient implements IECSClient {
      * 2. If the node is in state ServerStatus.STOPPING:
      * - Look ahead in HashRing for a currently ServerStatus.RUNNING to give data to
      */
-    private List<TransferPair> calculateNodeTransfers() {
+    private List<HashRangeTransfer> calculateNodeTransfers() {
 
         List<ZkECSNode> changedServerState = newHashRing.getAllNodes();
-        List<TransferPair> transferList = new ArrayList<>();
+        List<HashRangeTransfer> transferList = new ArrayList<>();
 
         for (ZkECSNode node : changedServerState) {
             ZkECSNode successor = getNextValidNode(node);
             if (node.getNodeStatus() == ServerStatus.STARTING && successor != null) {
-                transferList.add(new TransferPair(successor, node, node.getNodeHashRange(), TransferType.DESTINATION_ADD));
+                transferList.add(new HashRangeTransfer(successor, node, node.getNodeHashRange(), TransferType.DESTINATION_ADD));
             } else if (node.getNodeStatus() == ServerStatus.STOPPING && successor != null) {
-                transferList.add(new TransferPair(node, successor, node.getNodeHashRange(), TransferType.SOURCE_REMOVE));
+                transferList.add(new HashRangeTransfer(node, successor, node.getNodeHashRange(), TransferType.SOURCE_REMOVE));
             }
         }
         return transferList;
@@ -535,14 +484,10 @@ public class ECSClient implements IECSClient {
                     newServerConnected.setNodeStatus(ServerStatus.STARTING);
                     newHashRing.addServer(newServerConnected);
 
-                    // Establish Connection Object
-                    ECSServerDeletionWatcher serverWatcher = new ECSServerDeletionWatcher(newServerConnected, zk, this);
-
                     // Establish watch on new znode
                     try {
-                        zk.getData(ZooKeeperService.ZK_SERVERS + "/" + serverName,
-                                serverWatcher.changedState);
-                    } catch (KeeperException | InterruptedException e) {
+                        newServerConnected.registerOnDeletionListener(zk, () -> handleNodeFailure(newServerConnected));
+                    } catch (IOException e) {
                         logger.warn("Unable to set data watch on new znode created by user");
                         e.printStackTrace();
                     }

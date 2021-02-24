@@ -7,6 +7,8 @@ import app_kvECS.IECSClient;
 import app_kvServer.IKVServer;
 import app_kvServer.KVServer;
 
+import java.io.IOException;
+
 public final class ObjectFactory {
     /*
      * Creates a KVClient object for auto-testing purposes
@@ -26,6 +28,10 @@ public final class ObjectFactory {
      * Creates an ECSClient object for auto-testing purposes
      */
     public static IECSClient createECSClientObject(String path, String zooKeeperConnectionString) {
-        return new ECSClient(path, zooKeeperConnectionString);
+        try {
+            return new ECSClient(path, zooKeeperConnectionString);
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to create an IECSClient", e);
+        }
     }
 }

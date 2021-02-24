@@ -1,22 +1,18 @@
 package testing;
 
 import app_kvECS.ECSClient;
-import ecs.ECSNode;
 import ecs.IECSNode;
+import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
-import ecs.zkwatcher.ECSMessageResponseWatcher;
 import junit.framework.TestCase;
 import logger.LogSetup;
 import org.apache.log4j.Level;
-import org.apache.zookeeper.KeeperException;
 import org.junit.Test;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -52,29 +48,35 @@ public class ECSTests extends TestCase {
 
     @Test
     public void testSendReceive() throws Exception {
+        final String REPLY_TEXT = "Hello";
+        final long TEST_TIMEOUT_MILLIS = 5000L;
+
         // Create a test server underneath zookeeper root
-        zk.createNode(ZooKeeperService.ZK_SERVERS + "/" + "testSendReceive", new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), true);
-        zk.getData(ZooKeeperService.ZK_SERVERS + "/" + "testSendReceive", watchedEvent -> {
-            KVAdminMessageProto sevRes = new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY, "Hello");
+        final ZkECSNode node = new ZkECSNode("testSendReceive", "127.0.0.1", 5001);
+        zk.createNode(node.getZnode(), new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), true);
+        zk.watchDataOnce(node.getZnode(), () -> {
             try {
-                zk.setData(ZooKeeperService.ZK_SERVERS + "/" + "testSendReceive", sevRes.getBytes());
-            } catch (KeeperException | InterruptedException e) {
-            }
+                KVAdminMessageProto reply = new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY, REPLY_TEXT);
+                zk.setData(node.getZnode(), reply.getBytes());
+            } catch (IOException ignored) {
+            } // test will time out and fail anyway
         });
 
         // Send a request to the dummy server and get a dummy response
-        final long TEST_TIMEOUT_MILLIS = 5000;
-        Future<KVAdminMessageProto> response = Executors.newSingleThreadExecutor().invokeAll((Collections.singletonList((Callable<KVAdminMessageProto>) () -> {
-            KVAdminMessageProto req = new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY);
-            ECSMessageResponseWatcher lis = new ECSMessageResponseWatcher(zk, new ECSNode("testSendReceive", "127.0.0.1", 5001));
+        Future<KVAdminMessageProto> responseFuture = Executors.newSingleThreadExecutor().submit(() -> {
             try {
-                return lis.sendMessage(req, TEST_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
+                return node.sendMessage(zk, new KVAdminMessageProto(
+                        ECSClient.ECS_NAME,
+                        KVAdminMessage.AdminStatusType.EMPTY
+                ), TEST_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS);
             } catch (IOException e) {
                 e.printStackTrace();
             }
             return null;
-        }))).get(0);
+        });
 
-        assertEquals(response.get(TEST_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS).getValue(), "Hello");
+        final KVAdminMessageProto response = responseFuture.get();
+        assertNotNull(response);
+        assertEquals(response.getValue(), REPLY_TEXT);
     }
 }

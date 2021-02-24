@@ -223,7 +223,7 @@ public class KVServer extends Thread implements IKVServer {
                 logger.debug("New client:" + client);
                 threadPool.execute(new ClientConnection(client, this /* reference to server process */));
             } catch (IOException e) {
-                logger.error("Socket error", e);
+                logger.warn("Socket error: " + e.getMessage());
             } catch (RejectedExecutionException e) {
                 logger.error("Client rejected", e);
             }
