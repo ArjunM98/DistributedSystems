@@ -17,6 +17,7 @@ import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -462,9 +463,9 @@ public class AdditionalTest extends TestCase {
         final Set<KVPair> batch2 = IntStream.range(0, NUM_REQ_PER_BATCH).mapToObj(i -> new KVPair("dt_key_2_" + i, "dt_value_2_" + i)).collect(Collectors.toSet());
 
         // 2. Prepare servers
-        final KVServer original = new KVServer(42069, NUM_REQ_PER_BATCH, "FIFO"),
-                newFullCopy = new KVServer(42070, NUM_REQ_PER_BATCH, "FIFO"),
-                newB1deleted = new KVServer(42071, NUM_REQ_PER_BATCH, "FIFO");
+        final KVServer original = new KVServer(42069, "original", "", NUM_REQ_PER_BATCH, "FIFO"),
+                newFullCopy = new KVServer(42070, "full_copy", "", NUM_REQ_PER_BATCH, "FIFO"),
+                newB1deleted = new KVServer(42071, "b1_deleted", "", NUM_REQ_PER_BATCH, "FIFO");
 
         // 3. Prepare client
         final KVStore client = new KVStore("localhost", 42069);
@@ -476,7 +477,13 @@ public class AdditionalTest extends TestCase {
             for (KVPair kv : batch1) client.put(kv.key, kv.value);
             for (KVPair kv : batch2) client.put(kv.key, kv.value);
         }
-        newFullCopy.putAllFromKvStream(original.openKvStream(e -> true));
+        newFullCopy.putAllFromKvStream(original.openKvStream(new Predicate<KVPair>() {
+            @Override
+            public boolean test(KVPair kvPair) {
+                ECSHashRing.computeHash(kvPair.key);
+                return false;
+            }
+        }));
 
         for (KVPair kv : batch1) {
             assertEquals(String.format("Transfer failed for '%s'", kv.key), kv.value, newFullCopy.getKV(kv.key));
