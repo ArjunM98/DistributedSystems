@@ -48,7 +48,7 @@ public class KVServer extends Thread implements IKVServer {
      * TODO (@ravi): encapsulate these two and properly init/update/etc.
      */
     private final ECSNode myEcsNode;
-    private final ECSHashRing allEcsNodes;
+    private final ECSHashRing<ECSNode> allEcsNodes;
 
     /**
      * Start KV Server at given port
@@ -76,7 +76,7 @@ public class KVServer extends Thread implements IKVServer {
         }
 
         // TODO: init and reinit these two properly somewhere else
-        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port));
+        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port), ECSNode::fromConfig);
         myEcsNode = allEcsNodes.getServer(String.format("localhost:%d", port));
 
         this.start();

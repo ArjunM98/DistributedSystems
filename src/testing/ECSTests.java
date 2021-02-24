@@ -45,6 +45,7 @@ public class ECSTests extends TestCase {
      */
     @Test
     public void testAddNodes() {
+        // TODO: revise once ssh stuff is working
         Collection<IECSNode> nodesToAdd = ecs.setupNodes(5, "FIFO", 10);
         assertEquals(nodesToAdd.size(), 5);
     }

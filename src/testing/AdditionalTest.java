@@ -322,7 +322,7 @@ public class AdditionalTest extends TestCase {
     /**
      * See {@link #testOneNodeHashRing()}
      */
-    private void oneNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first) {
+    private void oneNodeHashRingTestHelper(ECSHashRing<ECSNode> hashRing, ECSNode first) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
         assertEquals("Expected Tuple_2 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
@@ -335,7 +335,7 @@ public class AdditionalTest extends TestCase {
     /**
      * See {@link #testTwoNodeHashRing()}
      */
-    private void twoNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second) {
+    private void twoNodeHashRingTestHelper(ECSHashRing<ECSNode> hashRing, ECSNode first, ECSNode second) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
         assertEquals("Expected Tuple_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
@@ -350,7 +350,7 @@ public class AdditionalTest extends TestCase {
     /**
      * See {@link #testMultiNodeHashRing()}
      */
-    private void threeNodeHashRingTestHelper(ECSHashRing hashRing, ECSNode first, ECSNode second, ECSNode third) {
+    private void threeNodeHashRingTestHelper(ECSHashRing<ECSNode> hashRing, ECSNode first, ECSNode second, ECSNode third) {
         // Examples inspired by Quercus diagram
         assertEquals("Expected Tuple_1 -> KVServer_1", first, hashRing.getServer(new BigInteger("2B786438D2C6425D0000000000000000", 16)));
         assertEquals("Expected Tuple_2 -> KVServer_2", second, hashRing.getServer(new BigInteger("2B786438D2C6425DFFFFFFFFFFFFFFFF", 16)));
@@ -368,7 +368,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testOneNodeHashRing() {
-        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSHashRing<ECSNode> hashRing = new ECSHashRing<>();
         final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000);
 
         hashRing.addServer(first); // 2B786438D2C6425DC30DE0077EA6494D
@@ -385,7 +385,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testTwoNodeHashRing() {
-        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSHashRing<ECSNode> hashRing = new ECSHashRing<>();
         final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000),
                 second = new ECSNode("KVServer_2", "localhost", 50005);
 
@@ -403,7 +403,7 @@ public class AdditionalTest extends TestCase {
      */
     @Test
     public void testMultiNodeHashRing() {
-        final ECSHashRing hashRing = new ECSHashRing();
+        final ECSHashRing<ECSNode> hashRing = new ECSHashRing<>();
         final ECSNode first = new ECSNode("KVServer_1", "localhost", 50000),
                 second = new ECSNode("KVServer_2", "localhost", 50005),
                 third = new ECSNode("KVServer_3", "localhost", 55555);
@@ -437,7 +437,7 @@ public class AdditionalTest extends TestCase {
                 "server8 127.0.0.1 50007";
 
         // Deserialization into ECSHashRing
-        final ECSHashRing hashRing = ECSHashRing.fromConfig(ecsConfigFileBlob);
+        final ECSHashRing<ECSNode> hashRing = ECSHashRing.fromConfig(ecsConfigFileBlob, ECSNode::fromConfig);
 
         // Serialization of ECSHashRing into string
         final String serializedBlob = hashRing.toConfig();
