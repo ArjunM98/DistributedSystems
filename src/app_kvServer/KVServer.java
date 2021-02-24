@@ -6,10 +6,13 @@ import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
+import ecs.zk.ZooKeeperService;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
+import shared.messages.KVAdminMessage;
+import shared.messages.KVAdminMessageProto;
 import shared.messages.KVMessage;
 
 import java.io.IOException;
@@ -26,22 +29,20 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public class KVServer extends Thread implements IKVServer {
+    //need to add name, lock, zkservice, ref to node (string)
     private static final Logger logger = Logger.getRootLogger();
 
+    private final String nodePath;
+    private final ZooKeeperService ZKService;
+    private final String name;
     private final int port;
     private final IKVCache cache;
     private final IKVStorage storage;
 
     private final ExecutorService threadPool;
     private ServerSocket serverSocket;
+    private IKVServer.State state;
 
-    /**
-     * TODO (@ravi): encapsulate and provide this functionality from some kind of server state class that deals with all the ECS things
-     * Also will need to break this into at least the 3 following cases:
-     * - isAlive - server is alive
-     * - isStarted - server is alive and allowed to respond to clients
-     * - isWriteLocked - see {@link shared.messages.KVMessage.StatusType#SERVER_WRITE_LOCK}
-     */
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     /**
@@ -61,8 +62,34 @@ public class KVServer extends Thread implements IKVServer {
      *                  currently not contained in the cache. Options are "FIFO", "LRU",
      *                  and "LFU".
      */
-    public KVServer(int port, int cacheSize, String strategy) {
+    public KVServer(int port, String name, String connectionString, int cacheSize, String strategy) {
+
+        this.name = name;
         this.port = port;
+        this.state = IKVServer.State.ALIVE;
+
+        ZooKeeperService ZKService = null;
+        try {
+            ZKService = new ZooKeeperService(connectionString);
+        } catch(IOException e) {
+            logger.error("Failed to connect to ZooKeeper", e);
+        } finally {
+            this.ZKService = ZKService;
+        }
+
+        //TODO:
+        //set watch on created znode
+        //set watch on metadata znode
+        String nodePath = ZKService.ZK_SERVERS + "/" + name;
+
+        try {
+            nodePath = this.ZKService.createNode(nodePath, new KVAdminMessageProto(name, KVAdminMessage.AdminStatusType.EMPTY), true);
+        } catch (IOException e) {
+            logger.error("Error creating node", e);
+        } finally {
+            this.nodePath = nodePath;
+        }
+
         this.threadPool = Executors.newCachedThreadPool();
 
         this.storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY + "/" + port);
@@ -80,6 +107,21 @@ public class KVServer extends Thread implements IKVServer {
         myEcsNode = allEcsNodes.getServer(String.format("localhost:%d", port));
 
         this.start();
+    }
+
+    @Override
+    public IKVServer.State getServerState() {
+        return state;
+    }
+
+    @Override
+    public void setServerState(IKVServer.State newState) {
+        this.state = newState;
+    }
+
+    @Override
+    public String getServerName() {
+        return name;
     }
 
     @Override
@@ -119,7 +161,7 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public String getKV(String key) throws KVServerException {
-        if (key.equals("todo: do a stopped state check here")) {
+        if (state == IKVServer.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
@@ -151,11 +193,11 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public void putKV(String key, String value) throws KVServerException {
-        if (key.equals("todo: do a stopped state check here")) {
+        if (state == IKVServer.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        if (key.equals("todo: do a write lock check here")) {
+        if (state == IKVServer.State.LOCKED) {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 

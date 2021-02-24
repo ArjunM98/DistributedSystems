@@ -8,6 +8,35 @@ public interface IKVServer {
         FIFO
     };
 
+    public enum State {
+        ALIVE,             /* Server is alive, but not started */
+        DEAD,              /* Server is not alive */
+        STARTED,           /* Server is active and ready to respond */
+        STOPPED,           /* Server is alive but not responding to requests */
+        LOCKED,            /* Server is write locked */
+        UNLOCKED,          /* Server is not locked */
+        SENDING_TRANSFER,  /* Server is sending data */
+        RECEIVING_TRANSFER /* Server is receiving data */
+    };
+
+    /**
+     * Get the server state
+     * @return  state
+     */
+    public State getServerState();
+
+    /**
+     * Set the server state
+     * @param  newState the new state of the server
+     */
+    public void setServerState(State newState);
+
+    /**
+     * Get the name of the server
+     * @return  name
+     */
+    public String getServerName();
+
     /**
      * Get the port number of the server
      * @return  port number
