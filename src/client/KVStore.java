@@ -2,7 +2,6 @@ package client;
 
 import ecs.ECSHashRing;
 import ecs.ECSNode;
-import ecs.IECSNode;
 import org.apache.log4j.Logger;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
@@ -29,7 +28,7 @@ public class KVStore implements KVCommInterface {
 
     private static final Logger logger = Logger.getRootLogger();
 
-    private final ECSHashRing hashRing = new ECSHashRing();
+    private final ECSHashRing<ECSNode> hashRing = new ECSHashRing<>();
     private final Map<String, Socket> serverConnections = new HashMap<>();
 
     private final AtomicLong msgID = new AtomicLong(KVMessageProto.START_MESSAGE_ID);
@@ -46,7 +45,7 @@ public class KVStore implements KVCommInterface {
 
     @Override
     public void connect() throws Exception {
-        for (IECSNode node : hashRing.getAllNodes().values()) getConnection(((ECSNode) node));
+        for (ECSNode node : hashRing.getAllNodes()) getConnection(node);
     }
 
     /**
@@ -81,10 +80,10 @@ public class KVStore implements KVCommInterface {
             return getConnection(node);
         } catch (IOException e1) {
             logger.error("Cannot connect to desired server", e1);
-            final Socket backupSocket = hashRing.getAllNodes().values().stream()
+            final Socket backupSocket = hashRing.getAllNodes().stream()
                     .map(e -> {
                         try {
-                            return getConnection(((ECSNode) e));
+                            return getConnection(e);
                         } catch (IOException e2) {
                             logger.error("Cannot connect to backup server", e2);
                             return null;
@@ -130,7 +129,7 @@ public class KVStore implements KVCommInterface {
                 new KVMessageProto(KVMessage.StatusType.PUT, validatedKey(key), validatedValue(value), messageId).writeMessageTo(clientSocket.getOutputStream());
                 final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
-                    updateMetadata(ECSHashRing.fromConfig(response.getValue()));
+                    updateMetadata(response.getValue());
                 } else return response;
             } catch (Exception e) {
                 return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
@@ -162,7 +161,7 @@ public class KVStore implements KVCommInterface {
                 new KVMessageProto(KVMessage.StatusType.GET, validatedKey(key), messageId).writeMessageTo(clientSocket.getOutputStream());
                 final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
-                    updateMetadata(ECSHashRing.fromConfig(response.getValue()));
+                    updateMetadata(response.getValue());
                 } else return response;
             } catch (Exception e) {
                 return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
@@ -179,8 +178,9 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    private void updateMetadata(ECSHashRing newConfig) throws IOException {
-        final Set<String> newConnectionStrings = newConfig.getAllNodes().values().stream().map(e -> (ECSNode) e).map(ECSNode::getConnectionString).collect(Collectors.toSet());
+    private void updateMetadata(String newConfig) throws IOException {
+        final ECSHashRing<ECSNode> newRing = ECSHashRing.fromConfig(newConfig, ECSNode::fromConfig);
+        final Set<String> newConnectionStrings = newRing.getAllNodes().stream().map(ECSNode::getConnectionString).collect(Collectors.toSet());
         serverConnections.entrySet().removeIf(entry -> {
             if (!newConnectionStrings.contains(entry.getKey())) {
                 disconnect(entry.getKey(), entry.getValue());
@@ -189,7 +189,7 @@ public class KVStore implements KVCommInterface {
         });
 
         hashRing.clear();
-        hashRing.addAll(newConfig);
+        hashRing.addAll(newRing);
         try {
             connect();
         } catch (Exception e) {

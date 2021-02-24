@@ -1,35 +1,31 @@
 package ecs;
 
-import app_kvECS.IECSClient;
-
 import java.math.BigInteger;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Map;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /**
- * TODO: consider rewriting as a proper {@link Collection} of {@link ECSNode}
+ * TODO: consider rewriting as a proper {@link Collection}
  */
-public class ECSHashRing {
+public class ECSHashRing<T extends ECSNode> {
     /**
      * A {@link java.util.NavigableMap} representing the hash ring of servers
      */
-    private final TreeMap<BigInteger, ECSNode> hashRing = new TreeMap<>();
+    private final TreeMap<BigInteger, T> hashRing = new TreeMap<>();
 
     /**
      * Parse and construct an ECSHashRing according to the example ecs.config file provided on Quercus
      *
-     * @param config string with lines like "server1 localhost 50000"
+     * @param config     string with lines like "server1 localhost 50000"
+     * @param fromConfig function that maps a string to an ECSNode-like object
      * @return constructed ECSHashRing
      * @throws IllegalArgumentException if lines are poorly formatted
      */
-    public static ECSHashRing fromConfig(String config) {
-        return new ECSHashRing(config.lines().map(ECSNode::fromConfig).toArray(ECSNode[]::new));
+    public static <T extends ECSNode> ECSHashRing<T> fromConfig(String config, Function<String, T> fromConfig) {
+        return new ECSHashRing<>(config.lines().map(fromConfig).collect(Collectors.toList()));
     }
 
     /**
@@ -44,10 +40,30 @@ public class ECSHashRing {
     /**
      * Construct an ECSHashRing with zero or more given nodes
      *
-     * @param nodes ECSNodes to include in the hash ring
+     * @param nodes to include in the hash ring
      */
-    public ECSHashRing(ECSNode... nodes) {
+    @SafeVarargs
+    public ECSHashRing(T... nodes) {
         this.addAll(Arrays.asList(nodes));
+    }
+
+    /**
+     * Construct an ECSHashRing from the provided collection
+     *
+     * @param nodes to include in the hash ring
+     */
+    public ECSHashRing(Collection<T> nodes) {
+        this.addAll(nodes);
+    }
+
+    /**
+     * Return a deep copy of this hash ring
+     *
+     * @param copyConstructor for the class of node this hash ring holds
+     * @return deep copy of this hash ring
+     */
+    public ECSHashRing<T> deepCopy(Function<T, T> copyConstructor) {
+        return new ECSHashRing<>(getAllNodes().stream().map(copyConstructor).collect(Collectors.toList()));
     }
 
     /**
@@ -65,12 +81,14 @@ public class ECSHashRing {
     }
 
     /**
-     * Return a Map of name to nodes.
+     * Get a mutable collection of all nodes in this hash ring, no guarantees on order even though it's a list.
+     * It's a shallow copy so modifications to entries in the list will be written through, but modifications to the
+     * list itself are completely safe.
      *
-     * @return functionality for {@link IECSClient#getNodes()}
+     * @return list of nodes
      */
-    public Map<String, IECSNode> getAllNodes() {
-        return hashRing.values().stream().collect(Collectors.toMap(ECSNode::getNodeName, Function.identity()));
+    public List<T> getAllNodes() {
+        return new ArrayList<>(hashRing.values());
     }
 
     /**
@@ -79,7 +97,7 @@ public class ECSHashRing {
      * @param name node name
      * @return node if found else null
      */
-    public ECSNode getNodeByName(String name) {
+    public T getNodeByName(String name) {
         return hashRing.values().stream().filter(e -> e.getNodeName().equals(name)).findFirst().orElse(null);
     }
 
@@ -87,9 +105,9 @@ public class ECSHashRing {
      * Wrapper for {@link #getServer(BigInteger)}
      *
      * @param payload string holding key or ip:port
-     * @return the {@link ECSNode} this payload maps to
+     * @return the node this payload maps to
      */
-    public ECSNode getServer(String payload) {
+    public T getServer(String payload) {
         return getServer(computeHash(payload));
     }
 
@@ -97,9 +115,9 @@ public class ECSHashRing {
      * Get server responsible for the given hash, considering wraparound as defined in Quercus guidelines
      *
      * @param hash {@link BigInteger} representation of an MD5 hash
-     * @return the {@link ECSNode} responsible for this hash
+     * @return the node responsible for this hash
      */
-    public ECSNode getServer(BigInteger hash) {
+    public T getServer(BigInteger hash) {
         if (hashRing.isEmpty()) return null;
         if (hashRing.size() == 1) return hashRing.firstEntry().getValue();
 
@@ -116,10 +134,10 @@ public class ECSHashRing {
      * @param server (does not have to be in the ring) to get predecessor for
      * @return predecessor (or potential predecessor) for server, or server if hash ring is empty
      */
-    public ECSNode getPredecessor(ECSNode server) {
+    public T getPredecessor(T server) {
         if (hashRing.isEmpty()) return server;
 
-        Map.Entry<BigInteger, ECSNode> predecessorEntry = hashRing.lowerEntry(server.getNodeHash());
+        Map.Entry<BigInteger, T> predecessorEntry = hashRing.lowerEntry(server.getNodeHash());
         if (predecessorEntry == null) predecessorEntry = hashRing.lastEntry();
         return predecessorEntry.getValue();
     }
@@ -130,12 +148,12 @@ public class ECSHashRing {
      * @param server (does not have to be in the ring) to get successor for
      * @return successor (or potential successor) for server, or server if hash ring is empty
      */
-    public ECSNode getSuccessor(ECSNode server) {
+    public T getSuccessor(T server) {
         if (hashRing.isEmpty()) return server;
 
         final BigInteger nodeHash = server.getNodeHash();
         if (hashRing.containsKey(nodeHash)) {
-            Map.Entry<BigInteger, ECSNode> successorEntry = hashRing.higherEntry(nodeHash);
+            Map.Entry<BigInteger, T> successorEntry = hashRing.higherEntry(nodeHash);
             if (successorEntry == null) successorEntry = hashRing.firstEntry();
             return successorEntry.getValue();
         } else {
@@ -149,14 +167,14 @@ public class ECSHashRing {
      * @param server to add to ring
      * @return true if the hash ring has changed as a result of calling this method
      */
-    public boolean addServer(ECSNode server) {
+    public boolean addServer(T server) {
         // Already present, this is a no-op
         if (hashRing.containsKey(server.getNodeHash())) return false;
 
         if (hashRing.isEmpty()) {
             hashRing.put(server.getNodeHash(), server);
         } else {
-            final ECSNode successor = getSuccessor(server), predecessor = getPredecessor(server);
+            final T successor = getSuccessor(server), predecessor = getPredecessor(server);
             hashRing.put(server.getNodeHash(), server);
             successor.setPredecessor(server);
             server.setPredecessor(predecessor);
@@ -171,14 +189,14 @@ public class ECSHashRing {
      * @param server to remove from ring
      * @return true if the hash ring has changed as a result of calling this method
      */
-    public boolean removeServer(ECSNode server) {
+    public boolean removeServer(T server) {
         // Not present, this is a no-op
         if (!hashRing.containsKey(server.getNodeHash())) return false;
 
         if (hashRing.size() <= 1) {
             hashRing.remove(server.getNodeHash());
         } else {
-            final ECSNode successor = getSuccessor(server), predecessor = getPredecessor(server);
+            final T successor = getSuccessor(server), predecessor = getPredecessor(server);
             hashRing.remove(server.getNodeHash());
             successor.setPredecessor(predecessor);
         }
@@ -192,7 +210,7 @@ public class ECSHashRing {
      * @param other the other hash ring to merge into this one
      * @return true if the hash ring has changed as a result of calling this method (does not mean all add operations were successful though)
      */
-    public boolean addAll(ECSHashRing other) {
+    public boolean addAll(ECSHashRing<T> other) {
         return this.addAll(other.hashRing.values());
     }
 
@@ -202,9 +220,9 @@ public class ECSHashRing {
      * @param servers to add to the ring
      * @return true if the hash ring has changed as a result of calling this method (does not mean all add operations were successful though)
      */
-    public boolean addAll(Collection<? extends ECSNode> servers) {
+    public boolean addAll(Collection<T> servers) {
         boolean result = false;
-        for (ECSNode server : servers) result |= addServer(server);
+        for (T server : servers) result |= addServer(server);
         return result;
     }
 

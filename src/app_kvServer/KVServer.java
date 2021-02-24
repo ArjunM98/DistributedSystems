@@ -48,7 +48,7 @@ public class KVServer extends Thread implements IKVServer {
      * TODO (@ravi): encapsulate these two and properly init/update/etc.
      */
     private final ECSNode myEcsNode;
-    private final ECSHashRing allEcsNodes;
+    private final ECSHashRing<ECSNode> allEcsNodes;
 
     /**
      * Start KV Server at given port
@@ -76,7 +76,7 @@ public class KVServer extends Thread implements IKVServer {
         }
 
         // TODO: init and reinit these two properly somewhere else
-        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port));
+        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port), ECSNode::fromConfig);
         myEcsNode = allEcsNodes.getServer(String.format("localhost:%d", port));
 
         this.start();
@@ -223,7 +223,7 @@ public class KVServer extends Thread implements IKVServer {
                 logger.debug("New client:" + client);
                 threadPool.execute(new ClientConnection(client, this /* reference to server process */));
             } catch (IOException e) {
-                logger.error("Socket error", e);
+                logger.warn("Socket error: " + e.getMessage());
             } catch (RejectedExecutionException e) {
                 logger.error("Client rejected", e);
             }

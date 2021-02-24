@@ -60,6 +60,19 @@ public class ECSNode implements IECSNode {
     }
 
     /**
+     * Copy constructor
+     *
+     * @param original node to copy
+     */
+    public ECSNode(ECSNode original) {
+        this.nodeName = original.nodeName;
+        this.nodeHost = original.nodeHost;
+        this.nodePort = original.nodePort;
+        this.nodeHash = original.nodeHash;
+        this.predecessorHash = original.predecessorHash;
+    }
+
+    /**
      * Save the hash of the predecessor of this node from the {@link ECSHashRing} to build this node's range
      */
     public void setPredecessor(ECSNode predecessor) {
