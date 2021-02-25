@@ -18,7 +18,7 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-public class BasePerformanceTest extends TestCase {
+public abstract class BasePerformanceTest extends TestCase {
     /**
      * NUM_UNIQ_REQS: the number of unique key/value pairs to generate
      * REQ_DUPLICITY: how many times each of the unique requests should be re-attempted
@@ -26,10 +26,14 @@ public class BasePerformanceTest extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    private static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2;
+    protected static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2;
+
+    protected static final int CACHE_SIZE = NUM_UNIQ_REQS / 2;
+    protected static final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
+
 
     private static final List<KVPair> REQUEST_TEST_SET;
-    private static KVServer SERVER;
+    private static List<KVServer> SERVERS; // TODO: replace with an ECS
     private static List<KVStore> CLIENTS;
 
     /*
@@ -38,6 +42,15 @@ public class BasePerformanceTest extends TestCase {
     static {
         try {
             REQUEST_TEST_SET = generateTestSet();
+            System.out.println(String.join(" | ",
+                    "Clients",
+                    "Servers",
+                    "GET/Request Ratio",
+                    "Average GET Latency (ms)",
+                    "Average GET Throughput (MB/s)",
+                    "Average PUT Latency (ms)",
+                    "Average PUT Throughput (MB/s)"
+            ));
         } catch (Exception e) {
             throw new RuntimeException("Could not generate test set", e);
         }
@@ -74,7 +87,7 @@ public class BasePerformanceTest extends TestCase {
      */
     @Override
     protected void setUp() throws Exception {
-        SERVER = generateNewServer();
+        SERVERS = generateNewServers();
         CLIENTS = generateNewClients();
 
         for (KVStore kvClient : CLIENTS) kvClient.connect();
@@ -86,70 +99,67 @@ public class BasePerformanceTest extends TestCase {
     @Override
     protected void tearDown() {
         for (KVStore kvClient : CLIENTS) kvClient.disconnect();
-        SERVER.clearStorage();
-        SERVER.close();
+        for (KVServer kvServer : SERVERS) {
+            kvServer.clearStorage();
+            kvServer.close();
+        }
     }
 
-    protected List<KVStore> generateNewClients() {
-        final int NUM_CLIENTS = 8;
+    protected abstract List<KVStore> generateNewClients();
 
-        return IntStream.range(0, NUM_CLIENTS)
-                .mapToObj(i -> new KVStore("localhost", 50000))
-                .collect(Collectors.toList());
-    }
+    protected abstract List<KVServer> generateNewServers();
 
-    protected KVServer generateNewServer() {
-        final int CACHE_SIZE = 0;
-        final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
+    protected abstract int getNumClients();
 
-        return new KVServer(50000, CACHE_SIZE, CACHE_STRATEGY.toString());
-    }
+    protected abstract int getNumServers();
 
     public ThroughputResults singleClientPerformance(KVStore store, List<KVPair> tests, Predicate<Integer> isGetIteration) throws Exception {
         long getMsgSize = 0, getExecTime = 0, getCount = 0, putMsgSize = 0, putExecTime = 0, putCount = 0;
 
-        List<String> gettableKeys = new LinkedList<>();
         Collections.shuffle(tests);
+        tests = tests.subList(0, tests.size() / getNumClients());
 
         int iterations = 0;
+        List<String> gettableKeys = new LinkedList<>();
         for (KVPair test : tests) {
             iterations++;
             if (isGetIteration.test(iterations) && !gettableKeys.isEmpty()) {
                 String key = gettableKeys.get(0);
 
-                long start = System.currentTimeMillis();
+                long start = System.nanoTime();
                 final KVMessage res = store.get(key);
-                long finish = System.currentTimeMillis();
+                long finish = System.nanoTime();
                 assertNotSame("GET failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
                 getCount++;
                 getExecTime += (finish - start);
-                getMsgSize += ((KVMessageProto) res).getByteRepresentation().length;
+                getMsgSize += ((KVMessageProto) res).getByteRepresentation().length / 1000;
             } else {
                 String key = test.key, value = test.value;
 
-                long start = System.currentTimeMillis();
+                long start = System.nanoTime();
                 final KVMessage res = store.put(key, value);
-                long finish = System.currentTimeMillis();
+                long finish = System.nanoTime();
                 assertNotSame("PUT failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
                 putCount++;
                 putExecTime += (finish - start);
-                putMsgSize += ((KVMessageProto) res).getByteRepresentation().length;
+                putMsgSize += ((KVMessageProto) res).getByteRepresentation().length / 1000;
 
                 gettableKeys.add(key);
                 Collections.shuffle(gettableKeys);
             }
         }
 
-
         return new ThroughputResults(Thread.currentThread().getId(),
-                getExecTime / (double) getCount,
-                putExecTime / (double) putCount,
-                getMsgSize / (double) getExecTime,
-                putMsgSize / (double) putExecTime
+                getCount,
+                putCount,
+                getExecTime / 1e6, // nanos->millis
+                putExecTime / 1e6, // nanos->millis
+                getMsgSize,
+                putMsgSize
         );
     }
 
-    public void putGetPerformance(String testName, Predicate<Integer> isGetIteration) {
+    public void putGetPerformance(String getRequestRatio, Predicate<Integer> isGetIteration) {
         final int NUM_CLIENTS = CLIENTS.size();
         ExecutorService threadPool = Executors.newFixedThreadPool(NUM_CLIENTS);
         List<Callable<ThroughputResults>> threads = CLIENTS.stream()
@@ -159,18 +169,27 @@ public class BasePerformanceTest extends TestCase {
 
         try {
             // Since requests are evenly distributed among clients, sum of averages is equal to average of sums
-            double averageClientLatencyGet = 0, averageTotalThroughputGet = 0, averageClientLatencyPut = 0, averageTotalThroughputPut = 0;
+            long totalGets = 0, totalPuts = 0;
+            double totalGetsTime = 0, totalGetsBandwidth = 0, totalPutsTime = 0, totalPutsBandwidth = 0;
             for (Future<ThroughputResults> future : threadPool.invokeAll(threads)) {
                 ThroughputResults result = future.get();
-                averageClientLatencyGet += result.averageGetLatency / NUM_CLIENTS;
-                averageClientLatencyPut += result.averagePutLatency / NUM_CLIENTS;
-                averageTotalThroughputGet += result.averageGetThroughput;
-                averageTotalThroughputPut += result.averagePutThroughput;
+                totalGets += result.getsCount;
+                totalPuts += result.putsCount;
+                totalGetsTime += result.totalGetsTime;
+                totalPutsTime += result.totalPutsTime;
+                totalGetsBandwidth += result.totalGetsBandwidth;
+                totalPutsBandwidth += result.totalPutsBandwidth;
             }
-            System.out.printf("%s | Server | Average GET Latency (ms) | %.3f\n", testName, averageClientLatencyGet);
-            System.out.printf("%s | Server | Average GET Throughput (KB/s) | %.3f\n", testName, averageTotalThroughputGet);
-            System.out.printf("%s | Server | Average PUT Latency (ms) | %.3f\n", testName, averageClientLatencyPut);
-            System.out.printf("%s | Server | Average PUT Throughput (KB/s) | %.3f\n", testName, averageTotalThroughputPut);
+
+            System.out.printf("%d | %d | %s | %.3f | %.3f | %.3f | %.3f%n",
+                    getNumClients(),
+                    getNumServers(),
+                    getRequestRatio,
+                    (totalGetsTime / totalGets) / NUM_CLIENTS,
+                    totalGetsBandwidth / (totalGetsTime / totalGets),
+                    (totalPutsTime / totalPuts) / NUM_CLIENTS,
+                    totalPutsBandwidth / (totalPutsTime / totalPuts)
+            );
         } catch (Exception e) {
             throw new RuntimeException("Threadpool encountered an error", e);
         }
@@ -178,59 +197,61 @@ public class BasePerformanceTest extends TestCase {
 
     @Test
     public void test10Get90PutPerformance() {
-        putGetPerformance("10/90", i -> i % 10 == 0);
+        putGetPerformance("0.1", i -> i % 10 == 0);
     }
 
     @Test
     public void test20Get80PutPerformance() {
-        putGetPerformance("20/80", i -> i % 5 == 0);
+        putGetPerformance("0.2", i -> i % 5 == 0);
     }
 
     @Test
     public void test30Get70PutPerformance() {
-        putGetPerformance("30/70", i -> Arrays.asList(0, 1, 2).contains(i % 10));
+        putGetPerformance("0.3", i -> Arrays.asList(0, 1, 2).contains(i % 10));
     }
 
     @Test
     public void test40Get60PutPerformance() {
-        putGetPerformance("40/60", i -> Arrays.asList(0, 1).contains(i % 5));
+        putGetPerformance("0.4", i -> Arrays.asList(0, 1).contains(i % 5));
     }
 
     @Test
     public void test50Get50PutPerformance() {
-        putGetPerformance("50/50", i -> i % 2 == 0);
+        putGetPerformance("0.5", i -> i % 2 == 0);
     }
 
     @Test
     public void test60Get40PutPerformance() {
-        putGetPerformance("60/40", i -> i % 5 > 1);
+        putGetPerformance("0.6", i -> i % 5 > 1);
     }
 
     @Test
     public void test70Get30PutPerformance() {
-        putGetPerformance("70/30", i -> i % 10 > 2);
+        putGetPerformance("0.7", i -> i % 10 > 2);
     }
 
     @Test
     public void test80Get20PutPerformance() {
-        putGetPerformance("80/20", i -> i % 5 > 0);
+        putGetPerformance("0.8", i -> i % 5 > 0);
     }
 
     @Test
     public void test90Get10PutPerformance() {
-        putGetPerformance("90/10", i -> i % 10 > 0);
+        putGetPerformance("0.9", i -> i % 10 > 0);
     }
 
     private static class ThroughputResults {
-        final long id;
-        final double averageGetLatency, averagePutLatency, averageGetThroughput, averagePutThroughput;
+        final long id, getsCount, putsCount;
+        final double totalGetsTime, totalPutsTime, totalGetsBandwidth, totalPutsBandwidth;
 
-        public ThroughputResults(long id, double averageGetLatency, double averagePutLatency, double averageGetThroughput, double averagePutThroughput) {
+        public ThroughputResults(long id, long getsCount, long putsCount, double totalGetsTime, double totalPutsTime, double totalGetsBandwidth, double totalPutsBandwidth) {
             this.id = id;
-            this.averageGetLatency = averageGetLatency;
-            this.averagePutLatency = averagePutLatency;
-            this.averageGetThroughput = averageGetThroughput;
-            this.averagePutThroughput = averagePutThroughput;
+            this.getsCount = getsCount;
+            this.putsCount = putsCount;
+            this.totalGetsTime = totalGetsTime;
+            this.totalPutsTime = totalPutsTime;
+            this.totalGetsBandwidth = totalGetsBandwidth;
+            this.totalPutsBandwidth = totalPutsBandwidth;
         }
     }
 }
