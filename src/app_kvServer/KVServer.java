@@ -11,8 +11,7 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
-import shared.messages.KVAdminMessage;
-import shared.messages.KVAdminMessageProto;
+
 import shared.messages.KVMessage;
 
 import java.io.IOException;
@@ -29,11 +28,8 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public class KVServer extends Thread implements IKVServer {
-    //need to add name, lock, zkservice, ref to node (string)
     private static final Logger logger = Logger.getRootLogger();
 
-    private final String nodePath;
-    private final ZooKeeperService ZKService;
     private final String name;
     private final int port;
     private final IKVCache cache;
@@ -42,6 +38,7 @@ public class KVServer extends Thread implements IKVServer {
     private final ExecutorService threadPool;
     private ServerSocket serverSocket;
     private IKVServer.State state;
+    private final ECSServerConnection ecsServerConnection;
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
@@ -68,27 +65,14 @@ public class KVServer extends Thread implements IKVServer {
         this.port = port;
         this.state = IKVServer.State.ALIVE;
 
-        ZooKeeperService ZKService = null;
+        ZooKeeperService zkService = null;
         try {
-            ZKService = new ZooKeeperService(connectionString);
+            zkService = new ZooKeeperService(connectionString);
         } catch(IOException e) {
             logger.error("Failed to connect to ZooKeeper", e);
-        } finally {
-            this.ZKService = ZKService;
         }
 
-        //TODO:
-        //set watch on created znode
-        //set watch on metadata znode
-        String nodePath = ZKService.ZK_SERVERS + "/" + name;
-
-        try {
-            nodePath = this.ZKService.createNode(nodePath, new KVAdminMessageProto(name, KVAdminMessage.AdminStatusType.EMPTY), true);
-        } catch (IOException e) {
-            logger.error("Error creating node", e);
-        } finally {
-            this.nodePath = nodePath;
-        }
+        this.ecsServerConnection = new ECSServerConnection(this, zkService);
 
         this.threadPool = Executors.newCachedThreadPool();
 
@@ -104,7 +88,8 @@ public class KVServer extends Thread implements IKVServer {
 
         // TODO: init and reinit these two properly somewhere else
         allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port), ECSNode::fromConfig);
-        myEcsNode = allEcsNodes.getServer(String.format("localhost:%d", port));
+        myEcsNode = allEcsNodes.getNodeByName(name);
+
 
         this.start();
     }
@@ -357,29 +342,33 @@ public class KVServer extends Thread implements IKVServer {
      */
     public static void main(String[] args) {
         int portNumber, cacheSize = 10;
+        String name = "test";
+        String connectionString = "";
         String policy = "FIFO";
         Level logLevel = Level.ALL;
 
         // 1. Validate args
         try {
             switch (args.length) {
-                case 4:
-                    String candidateLevel = args[3].toUpperCase();
+                case 6:
+                    String candidateLevel = args[5].toUpperCase();
                     if (!LogSetup.isValidLevel(candidateLevel))
                         throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
                     logLevel = Level.toLevel(candidateLevel, Level.ALL);
-                case 3:
-                    String candidatePolicy = args[2].toUpperCase();
+                case 5:
+                    String candidatePolicy = args[4].toUpperCase();
                     if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
                         throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
                     policy = candidatePolicy;
-                case 2:
+                case 4:
                     try {
-                        cacheSize = Integer.parseInt(args[1]);
+                        cacheSize = Integer.parseInt(args[3]);
                     } catch (NumberFormatException e) {
                         throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
                     }
-                case 1:
+                case 3:
+                    name = args[1];
+                    connectionString = args[2];
                     try {
                         portNumber = Integer.parseInt(args[0]);
                     } catch (NumberFormatException e) {
@@ -391,7 +380,7 @@ public class KVServer extends Thread implements IKVServer {
             }
         } catch (IllegalArgumentException e) {
             System.err.println("Error: " + e);
-            System.err.println("Usage: Server <port> [<cachesize> <cachepolicy> <loglevel>]");
+            System.err.println("Usage: Server <port> <name> <connectionString> [<cachesize> <cachepolicy> <loglevel>]");
             System.exit(1);
             return;
         }
@@ -406,7 +395,7 @@ public class KVServer extends Thread implements IKVServer {
         }
 
         // 3. Run server and respond to ctrl-c and kill
-        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, cacheSize, policy);
+        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, name, connectionString, cacheSize, policy);
         Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 }

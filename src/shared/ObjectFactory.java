@@ -20,8 +20,8 @@ public final class ObjectFactory {
     /*
      * Creates a KVServer object for auto-testing purposes
      */
-    public static IKVServer createKVServerObject(int port, int cacheSize, String strategy) {
-        return new KVServer(port, cacheSize, strategy);
+    public static IKVServer createKVServerObject(int port, String name, String connectionString, int cacheSize, String strategy) {
+        return new KVServer(port, name, connectionString, cacheSize, strategy);
     }
 
     /*
