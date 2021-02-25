@@ -457,7 +457,7 @@ public class AdditionalTest extends TestCase {
     @Test
     public void testKvServerDataTransfer() throws Exception {
         // 1. Prepare two sets of requests
-        final int NUM_REQ_PER_BATCH = 1000;
+        final int NUM_REQ_PER_BATCH = 50;
         final Set<KVPair> batch1 = IntStream.range(0, NUM_REQ_PER_BATCH).mapToObj(i -> new KVPair("dt_key_1_" + i, "dt_value_1_" + i)).collect(Collectors.toSet());
         final Set<KVPair> batch2 = IntStream.range(0, NUM_REQ_PER_BATCH).mapToObj(i -> new KVPair("dt_key_2_" + i, "dt_value_2_" + i)).collect(Collectors.toSet());
 
@@ -471,7 +471,8 @@ public class AdditionalTest extends TestCase {
         client.connect();
 
         // 4. First we'll populate the original server with everything and check if we can successfully transfer that
-        for (int i = 0; i < 5; i++) { // overwrite it a few times to make sure compaction works well
+        final int NUM_OVERWRITES = 3;
+        for (int i = 0; i < NUM_OVERWRITES; i++) { // overwrite it a few times to make sure compaction works well
             for (KVPair kv : batch1) client.put(kv.key, kv.value);
             for (KVPair kv : batch2) client.put(kv.key, kv.value);
         }
@@ -485,7 +486,7 @@ public class AdditionalTest extends TestCase {
         }
 
         // 5. Now we'll delete the keys from batch1, transfer, and make sure it works still
-        for (int i = 0; i < 5; i++) { // overwrite it a few times to make sure compaction works well
+        for (int i = 0; i < NUM_OVERWRITES; i++) { // overwrite it a few times to make sure compaction works well
             for (KVPair kv : batch1) client.put(kv.key, null);
         }
         newB1deleted.putAllFromKvStream(original.openKvStream(e -> true));
