@@ -211,7 +211,7 @@ public class KVClient implements IKVClient {
     public static void main(String[] args) {
         // 1. Initialize logger
         try {
-            new LogSetup("logs/client.log", Level.OFF);
+            new LogSetup("logs/client.log", Level.ALL);
         } catch (IOException e) {
             System.err.println("Logger error: " + e);
             System.exit(1);

@@ -179,6 +179,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
+        logger.info("here");
         if (!ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
@@ -196,6 +197,7 @@ public class KVServer extends Thread implements IKVServer {
         }
         else try {
             // Store BEFORE caching in case of any failures
+            logger.info("Trying to put value");
             storage.putKV(key, value);
             cache.putKV(key, value);
         } catch (KVServerException e) {

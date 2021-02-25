@@ -31,7 +31,7 @@ public class ECSClientCli implements Runnable {
      */
     public ECSClientCli(String[] args) {
         String ecsConfigPath, zkConnectionString = "localhost:2181";
-        Level logLevel = Level.INFO;
+        Level logLevel = Level.ALL;
 
         // 1. Validate args
         try {
@@ -148,14 +148,14 @@ public class ECSClientCli implements Runnable {
             return;
         }
         for (Map.Entry<String, IECSNode> node : nodes.entrySet()) {
-            System.out.printf("%s node is currently part of the storage service", node.getKey());
+            System.out.printf("%s:%d node is currently part of the storage service\n", node.getKey(), node.getValue().getNodePort());
         }
     }
 
     private void handleGetNodeByKey(List<String> args) {
         IECSNode node = ecs.getNodeByKey(args.get(0));
         if (node != null) {
-            System.out.printf("%s is responsible for key $s\n", node.getNodeName(), args.get(0));
+            System.out.printf("%s:%d is responsible for key $s\n", node.getNodeName(), node.getNodePort(), args.get(0));
         } else {
             System.out.println("The storage service does not contain any servers");
         }

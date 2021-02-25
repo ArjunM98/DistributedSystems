@@ -125,7 +125,7 @@ public class ClientConnection implements Runnable {
             return new KVMessageProto(putStatus, req.getKey(), req.getValue(), req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.PUT_ERROR) throw e;
-            return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
+            return new KVMessageProto(e.getErrorCode(), req.getKey(), req.getValue(), req.getId());
         } catch (Exception e) {
             return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
         }

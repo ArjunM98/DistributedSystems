@@ -28,6 +28,7 @@ public class ECSClient implements IECSClient {
     private static final Logger logger = Logger.getRootLogger();
     public static final String ECS_NAME = "ECS";
     public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m2-server.jar").toString();
+    public static final String ZK_CONN = "127.0.0.1:2181";
 
     /* Zookeeper Client Instance */
     private final ZooKeeperService zk;
@@ -142,7 +143,7 @@ public class ECSClient implements IECSClient {
         }
 
         // Update data
-        zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toString().getBytes(StandardCharsets.UTF_8));
+        zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toConfig().getBytes(StandardCharsets.UTF_8));
 
         // Release write lock
         for (HashRangeTransfer transfer : transferList) {
@@ -173,7 +174,7 @@ public class ECSClient implements IECSClient {
     @Override
     public boolean stop() {
 
-        if (hashRing.size() == 0) throw new IllegalStateException("No servers running currently");
+        if (hashRing.size() == 0) return false;
 
         boolean stopSuccessful = true;
 
@@ -331,7 +332,7 @@ public class ECSClient implements IECSClient {
                 break;
             }
         }
-        logger.info("Unable to respond!!!");
+        logger.info("Unable to contact server");
         return false;
     }
 
@@ -577,10 +578,12 @@ public class ECSClient implements IECSClient {
                 SERVER_JAR,
                 String.valueOf(nodeData.getNodePort()),
                 nodeData.getNodeName(),
-                cacheStrategy,
-                String.valueOf(cacheSize));
-        script = "ssh -n " + nodeData.getNodeHost() + " nohup " + script + " &";
+                ZK_CONN,
+                String.valueOf(cacheSize),
+                cacheStrategy);
+        script = "ssh -n " + nodeData.getNodeHost() + " nohup " + script + " > server.log &";
         Runtime run = Runtime.getRuntime();
+        logger.debug(script);
         run.exec(script);
     }
 

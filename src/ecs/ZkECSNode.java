@@ -92,7 +92,7 @@ public class ZkECSNode extends ECSNode {
         // 2. Wait for the response
         boolean resRecv = false;
         try {
-            resRecv = !latch.await(timeout, timeUnit);
+            resRecv = latch.await(timeout, timeUnit);
         } catch (InterruptedException e) {
             logger.warn("Unable to wait for latch to count down");
         }

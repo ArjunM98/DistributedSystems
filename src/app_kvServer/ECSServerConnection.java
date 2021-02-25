@@ -87,38 +87,49 @@ public class ECSServerConnection {
             }
 
             //prevent feedback loop
+            //TODO: the sender is being read as THREAD:01 so we aren't able to return
             if (req.getSender().equals(server.getServerName())) {
                 return;
             }
 
             logger.debug("Responding to request on " + server.getPort());
             switch (req.getStatus()) {
+                case INIT:
+                    handleInit(req);
+                    return;
                 case START:
                     handleStart();
-                    break;
+                    return;
                 case STOP:
                     handleStop();
-                    break;
+                    return;
                 case SHUTDOWN:
                     handleShutdown();
-                    break;
+                    return;
                 case LOCK:
                     handleLock();
-                    break;
+                    return;
                 case UNLOCK:
                     handleUnlock();
-                    break;
+                    return;
                 case MOVE_DATA:
                     handleMove(req);
-                    break;
+                    return;
                 case TRANSFER_REQ:
                     handleTransfer();
-                    break;
+                    return;
+                default:
+                    throw new KVServerException(String.format("Bad request type: %s", req.getStatus()), KVAdminMessage.AdminStatusType.FAILED);
             }
-            throw new KVServerException("Bad request type", KVAdminMessage.AdminStatusType.FAILED);
         } catch (KVServerException | IOException e) {
             logger.warn(String.format("Error processing request: %s", e.getMessage()));
         }
+    }
+
+    private void handleInit(KVAdminMessageProto req) throws IOException {
+        server.setServerState(State.STOPPED);
+        allEcsNodes = ECSHashRing.fromConfig(req.getValue(), ECSNode::fromConfig);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.INIT_ACK).getBytes());
     }
 
     private void handleStart() throws IOException {
