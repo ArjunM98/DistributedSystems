@@ -36,6 +36,8 @@ public class HashRangeTransfer {
         return this.hashRange;
     }
 
+    public TransferType getTransferType() { return this.transferType; }
+
     public ZkECSNode getLockingNode() {
         switch (this.transferType) {
             case SOURCE_REMOVE:
