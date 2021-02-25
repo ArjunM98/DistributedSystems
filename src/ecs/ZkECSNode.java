@@ -106,6 +106,8 @@ public class ZkECSNode extends ECSNode {
         }
 
         // 4. Return response
+        logger.info(res);
+        logger.info(resRecv);
         if (res == null || !resRecv) throw new IOException("Did not receive a response");
         return res;
     }

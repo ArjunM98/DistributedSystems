@@ -57,7 +57,7 @@ public class KVServer extends Thread implements IKVServer {
 
         this.name = name;
         this.port = port;
-        this.state = IKVServer.State.ALIVE;
+        this.state = IKVServer.State.STOPPED;
 
         ZooKeeperService zkService = null;
         try {
@@ -179,7 +179,6 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        logger.info("here");
         if (!ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }

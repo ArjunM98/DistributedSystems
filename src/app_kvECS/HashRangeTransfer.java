@@ -2,6 +2,7 @@ package app_kvECS;
 
 import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
+import org.apache.log4j.Logger;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
@@ -12,6 +13,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 public class HashRangeTransfer {
+
+    private static final Logger logger = Logger.getRootLogger();
 
     private final ZkECSNode sourceNode, destinationNode;
     private final String[] hashRange;
@@ -51,6 +54,7 @@ public class HashRangeTransfer {
     public void execute(ZooKeeperService zk) throws IOException {
         KVAdminMessageProto ack;
 
+        logger.info("SENDING LOCK REQUEST");
         // 1. Lock server I'm sending data to
         ack = getLockingNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -59,6 +63,7 @@ public class HashRangeTransfer {
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.LOCK_ACK)
             throw new IOException("Unable to acquire lock");
 
+        logger.info("SENDING TRANSFER REQUEST");
         // 2. Ask for transfer port available on deleted server
         ack = getDestinationNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -68,6 +73,7 @@ public class HashRangeTransfer {
             throw new IOException("Unable to acquire port information");
         String availablePort = ack.getValue();
 
+        logger.info("SENDING MOVE REQUEST");
         // 3. Send port information and range to new server
         ack = getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -78,6 +84,7 @@ public class HashRangeTransfer {
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.MOVE_DATA_ACK)
             throw new IOException("Unable to initiate transfer procedure");
 
+        logger.info("SENDING TRANSFER BEGIN(S)");
         // 4. Initiate transfer and await progress
         final long timeout = 2;
         final TimeUnit timeUnit = TimeUnit.HOURS;

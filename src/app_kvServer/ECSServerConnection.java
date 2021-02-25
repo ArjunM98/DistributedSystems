@@ -19,7 +19,7 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -36,7 +36,9 @@ public class ECSServerConnection {
     private final KVServer server;
     private final ZooKeeperService zkService;
     private final String zNode;
-    private ECSHashRing<ECSNode> allEcsNodes;
+
+    private ECSHashRing<ZkECSNode> allEcsNodes;
+    private CountDownLatch transferLatch;
 
     /**
      * Constructs a new ECS Server Connection object for a given node.
@@ -56,7 +58,7 @@ public class ECSServerConnection {
         }
 
         allEcsNodes = ECSHashRing.fromConfig(String
-                .format("%s %s %d", server.getServerName(), server.getHostname(), server.getPort()), ECSNode::fromConfig);
+                .format("%s %s %d", server.getServerName(), server.getHostname(), server.getPort()), ZkECSNode::fromConfig);
 
         zkService.watchDataForever(zNode, this::handleRequest);
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
@@ -67,11 +69,11 @@ public class ECSServerConnection {
     }
 
     public ECSNode getEcsNode() {
-        return allEcsNodes.getNodeByName(server.getName());
+        return allEcsNodes.getNodeByName(server.getServerName());
     }
 
     private void handleMetadataUpdate(byte[] input) {
-        allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ECSNode::fromConfig);
+        allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ZkECSNode::fromConfig);
     }
 
     /**
@@ -87,7 +89,6 @@ public class ECSServerConnection {
             }
 
             //prevent feedback loop
-            //TODO: the sender is being read as THREAD:01 so we aren't able to return
             if (req.getSender().equals(server.getServerName())) {
                 return;
             }
@@ -118,6 +119,10 @@ public class ECSServerConnection {
                 case TRANSFER_REQ:
                     handleTransfer();
                     return;
+                case TRANSFER_BEGIN:
+                    logger.info("RECEIVED TRANSFER BEGIN");
+                    handleTransferBegin();
+                    return;
                 default:
                     throw new KVServerException(String.format("Bad request type: %s", req.getStatus()), KVAdminMessage.AdminStatusType.FAILED);
             }
@@ -128,18 +133,18 @@ public class ECSServerConnection {
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
         server.setServerState(State.STOPPED);
-        allEcsNodes = ECSHashRing.fromConfig(req.getValue(), ECSNode::fromConfig);
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.INIT_ACK).getBytes());
+        allEcsNodes = ECSHashRing.fromConfig(req.getValue(), ZkECSNode::fromConfig);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.INIT_ACK).getBytes());
     }
 
     private void handleStart() throws IOException {
         server.setServerState(State.STARTED);
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.START_ACK).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.START_ACK).getBytes());
     }
 
     private void handleStop() throws IOException {
         server.setServerState(State.STOPPED);
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.STOP_ACK).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.STOP_ACK).getBytes());
     }
 
     private void handleShutdown() throws IOException {
@@ -149,81 +154,117 @@ public class ECSServerConnection {
 
     private void handleLock() throws IOException {
         server.setServerState(State.LOCKED);
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.LOCK_ACK).getBytes());
+        logger.info("SENDING LOCK ACK");
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.LOCK_ACK).getBytes());
     }
 
     private void handleUnlock() throws IOException {
         server.setServerState(State.UNLOCKED);
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
+        logger.info("SENDING UNLOCK ACK");
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
     }
 
     private void handleTransfer() throws IOException {
-
         ServerSocket socket;
         socket = new ServerSocket(0);
 
         int portNum = socket.getLocalPort();
-
-        KVAdminMessageProto ack = new ZkECSNode(server.getServerName(), server.getHostname(), server.getPort())
-                .sendMessage(zkService, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK, Integer.toString(portNum)), 5000, TimeUnit.MILLISECONDS);
-
-        if (ack.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_BEGIN) {
-
+        logger.info("HANDLING TRANSFER");
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK, Integer.toString(portNum)).getBytes());
+        logger.info("SENT TRANSFER ACK BACK");
+        Executors.newCachedThreadPool().execute(() -> {
+            boolean beginReceived = false;
+            transferLatch = new CountDownLatch(1);
             try {
-                Socket IOSocket = socket.accept();
-                try (BufferedReader in = new BufferedReader(new InputStreamReader(IOSocket.getInputStream()))) {
-                    server.putAllFromKvStream(in.lines());
-
-                } catch (IOException e) {
-                    logger.error("Error occurred during data transfer", e);
-                }
-                zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
-            } catch (IOException e) {
-                logger.error("Error occurred during data receive", e);
+                beginReceived = transferLatch.await(10000, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                logger.warn("Unable to wait for latch to count down");
             }
-        }
+//        KVAdminMessageProto ack = ((ZkECSNode) getEcsNode())
+//                .sendMessage(zkService, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK, Integer.toString(portNum)), 15000, TimeUnit.MILLISECONDS);
+//        logger.info(ack.getStatus().toString());
+
+            if (beginReceived) {
+                logger.info("HANDLE TRANSFER GOT TRANSFER BEGIN");
+                try {
+                    Socket IOSocket = socket.accept();
+                    try (BufferedReader in = new BufferedReader(new InputStreamReader(IOSocket.getInputStream()))) {
+                        logger.info("RECEIVED DATA");
+                        server.putAllFromKvStream(in.lines());
+                        logger.info("SENDING TRANSFER COMPLETE");
+                        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
+                    } catch (IOException e) {
+                        logger.error("Error occurred during data transfer", e);
+                    }
+                } catch (IOException e) {
+                    logger.error("Error occurred during data receive", e);
+                }
+            }
+        });
     }
 
     private void handleMove(KVAdminMessageProto req) throws IOException {
-
-        KVAdminMessageProto ack = new ZkECSNode(server.getServerName(), server.getHostname(), server.getPort())
-                .sendMessage(zkService, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK), 5000, TimeUnit.MILLISECONDS);
-        if (ack.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_BEGIN) {
-            Socket socket;
-            String[] fullAddr = req.getAddress().split(":");
-            socket = new Socket(fullAddr[0], Integer.parseInt(fullAddr[1]));
-
-            String[] range = req.getRange();
-            BigInteger l = new BigInteger(range[0], 16);
-            BigInteger r = new BigInteger(range[1], 16);
-
-            Predicate<IKVStorage.KVPair> filter = null;
-            switch (r.compareTo(l)) {
-                case 0: // Single node hash ring: this node is responsible for everything
-                    filter = kvPair -> true;
-                    break;
-                case 1: // Regular hash ring check: (node >= hash > predecessor)
-                    filter = kvPair -> {
-                        BigInteger hash = ECSHashRing.computeHash(kvPair.key);
-                        return (r.compareTo(hash) >= 0 && l.compareTo(hash) < 0);
-                    };
-                    break;
-                case -1: // Wraparound case: either (node >= hash) OR (hash > predecessor)
-                    filter = kvPair -> {
-                        BigInteger hash = ECSHashRing.computeHash(kvPair.key);
-                        return (r.compareTo(hash) >= 0 || l.compareTo(hash) < 0);
-                    };
-                    break;
+        logger.info("HANDLING MOVE");
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK).getBytes());
+        logger.info("SENT MOVE ACK BACK");
+        Executors.newCachedThreadPool().execute(() -> {
+            transferLatch = new CountDownLatch(1);
+            boolean beginReceived = false;
+            try {
+                beginReceived = transferLatch.await(10000, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                logger.warn("Unable to wait for latch to count down");
             }
+//        KVAdminMessageProto ack = ((ZkECSNode) getEcsNode())
+//                .sendMessage(zkService, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK), 15000, TimeUnit.MILLISECONDS);
+//        logger.info(ack.getStatus().toString());
+            if (beginReceived) {
+                logger.info("HANDLE MOVE GOT TRANSFER BEGIN");
+                Socket socket = null;
+                String[] fullAddr = req.getAddress().split(":");
+                try {
+                    socket = new Socket(fullAddr[0], Integer.parseInt(fullAddr[1]));
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
 
-            try (Stream<String> s = server.openKvStream(filter);
-                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-                s.forEach(out::println);
-                zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
-            } catch (IOException e) {
-                logger.error("Error occurred during data transfer", e);
+                String[] range = req.getRange();
+                BigInteger l = new BigInteger(range[0], 16);
+                BigInteger r = new BigInteger(range[1], 16);
+
+                Predicate<IKVStorage.KVPair> filter = null;
+                switch (r.compareTo(l)) {
+                    case 0: // Single node hash ring: this node is responsible for everything
+                        filter = kvPair -> true;
+                        break;
+                    case 1: // Regular hash ring check: (node >= hash > predecessor)
+                        filter = kvPair -> {
+                            BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                            return (r.compareTo(hash) >= 0 && l.compareTo(hash) < 0);
+                        };
+                        break;
+                    case -1: // Wraparound case: either (node >= hash) OR (hash > predecessor)
+                        filter = kvPair -> {
+                            BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                            return (r.compareTo(hash) >= 0 || l.compareTo(hash) < 0);
+                        };
+                        break;
+                }
+
+                try (Stream<String> s = server.openKvStream(filter);
+                     PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+                    logger.info("SENDING DATA");
+                    s.forEach(out::println);
+                    logger.info("SENDING TRANSFER COMPLETE");
+                    zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
+                } catch (IOException e) {
+                    logger.error("Error occurred during data transfer", e);
+                }
             }
-        }
+        });
     }
 
+    private void handleTransferBegin() {
+        transferLatch.countDown();
+    }
 }
