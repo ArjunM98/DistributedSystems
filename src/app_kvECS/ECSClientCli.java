@@ -1,5 +1,6 @@
 package app_kvECS;
 
+import ecs.IECSNode;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -9,7 +10,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -66,52 +69,96 @@ public class ECSClientCli implements Runnable {
     }
 
     private void handleStart(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.start();
+        try {
+            if (!ecs.start()) throw new Exception();
+        } catch (Exception e) {
+            System.out.println("Unable to start all queued servers, please try again");
+            return;
+        }
+        System.out.println("All servers previously queued have been started");
     }
 
     private void handleStop(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.stop();
+        try {
+            if (!ecs.stop()) throw new Exception();
+        } catch (Exception e) {
+            System.out.println("Unable to stop all servers, please try again");
+            return;
+        }
+        System.out.println("All running servers have been stopped");
     }
 
     private void handleShutdown(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.shutdown();
+        try {
+            if (!ecs.shutdown()) throw new Exception();
+        } catch (Exception e) {
+            System.out.println("Unable to shutdown all servers, please try again");
+            return;
+        }
+        System.out.println("All running servers have been shutdown");
     }
 
     private void handleAddNode(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.addNode();
+        int cacheSize;
+        try {
+            cacheSize = Integer.parseInt(args.get(1));
+        } catch (NumberFormatException e) {
+            System.out.println("Please provide a valid number for the cacheSize");
+            return;
+        }
+        IECSNode node = ecs.addNode(args.get(0), cacheSize);
+        if (node == null) {
+            System.out.println("Unable to add a new server to the service");
+        } else {
+            System.out.printf("%s server was added\n", node.getNodeName());
+        }
     }
 
     private void handleAddNodes(List<String> args) {
-        ecs.addNodes(Integer.parseInt(args.get(0)), args.get(1), Integer.parseInt(args.get(2)));
-    }
-
-    private void handleSetupNodes(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.setupNodes();
-    }
-
-    private void handleAwaitNodes(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.awaitNodes();
+        int num, cacheSize;
+        try {
+            num = Integer.parseInt(args.get(0));
+            cacheSize = Integer.parseInt(args.get(1));
+        } catch (NumberFormatException e) {
+            System.out.println("Please provide a valid number of servers/cacheSize");
+            return;
+        }
+        Collection<IECSNode> nodesAdded = ecs.addNodes(num, args.get(1), cacheSize);
+        if (nodesAdded.size() <= 0) {
+            System.out.println("Unable to add new node(s) to the service");
+        } else {
+            for (IECSNode node : nodesAdded) {
+                System.out.printf("%s server was added\n", node.getNodeName());
+            }
+        }
     }
 
     private void handleRemoveNodes(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.removeNodes();
+        if (ecs.removeNodes(args)) {
+            System.out.println("Removed all nodes from the specified service");
+        } else {
+            System.out.println("Unable to remove all specified nodes from the storage service");
+        }
     }
 
     private void handleGetNodes(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.getNodes();
+        Map<String, IECSNode> nodes = ecs.getNodes();
+        if (nodes.size() <= 0) {
+            System.out.println("There are currently no nodes part of the storage service");
+            return;
+        }
+        for (Map.Entry<String, IECSNode> node : nodes.entrySet()) {
+            System.out.printf("%s node is currently part of the storage service", node.getKey());
+        }
     }
 
     private void handleGetNodeByKey(List<String> args) {
-        logger.warn("Command not implemented");
-        // ecs.getNodeByKey();
+        IECSNode node = ecs.getNodeByKey(args.get(0));
+        if (node != null) {
+            System.out.printf("%s is responsible for key $s\n", node.getNodeName(), args.get(0));
+        } else {
+            System.out.println("The storage service does not contain any servers");
+        }
     }
 
     private void printError(String message, Throwable... errors) {
@@ -124,13 +171,30 @@ public class ECSClientCli implements Runnable {
         }
     }
 
+    private void handleHelp(List<String> args) {
+        System.out.printf("ECSClient for ECE419 Distributed Storage Server%n%s%n", ECSClientCli.Command.usage());
+    }
+
     /**
      * Encapsulation of client commands as defined in Milestone 1's Quercus doc
      */
     private enum Command {
         // TODO: add all the other commands
         addNodes("Randomly chose number of nodes to queue for startup",
-                3, 3, "numberOfNodes", "cacheStrategy", "cacheSize");
+                3, 3, "numberOfNodes", "cacheStrategy", "cacheSize"),
+        addNode("Add a singular node to the node to the storage service",
+                2, 2, "cacheStrategy", "cacheSize"),
+        shutdown("Shutdown all currently active/running servers in the service",
+                0, 0),
+        start("Start all servers that have previously been queued by addNode/addNodes",
+                0, 0),
+        stop("Stop all servers that are currently running in the storage service",
+                0, 0),
+        removeNodes("Stop all servers that are currently running in the storage service",
+                0, Integer.MAX_VALUE, "serverName(s)"),
+        getNodes("Get all servers participating within the storage service", 0, 0),
+        getKeyNode("Get the server responsible for the specified key", 0, 1, "key"),
+        help("Print this message", 0, 0);
 
         public static final String ARG_DELIMITER = "\\s+";
         private final int minArgCount, maxArgCount;
@@ -222,6 +286,14 @@ public class ECSClientCli implements Runnable {
     @Override
     public void run() {
         Command.addNodes.setCallback(this::handleAddNodes);
+        Command.addNode.setCallback(this::handleAddNode);
+        Command.shutdown.setCallback(this::handleShutdown);
+        Command.start.setCallback(this::handleStart);
+        Command.stop.setCallback(this::handleStop);
+        Command.removeNodes.setCallback(this::handleRemoveNodes);
+        Command.getNodes.setCallback(this::handleGetNodes);
+        Command.getKeyNode.setCallback(this::handleGetNodeByKey);
+        Command.help.setCallback(this::handleHelp);
 
         // 3. Run client loop
         try (BufferedReader stdin = new BufferedReader(new InputStreamReader(System.in))) {
@@ -231,7 +303,7 @@ public class ECSClientCli implements Runnable {
 
                 if (command == null) {
                     printError(String.format("Unknown command '%s'", tokens[0]));
-                    continue; // TODO: replace with command = Command.help
+                    command = ECSClientCli.Command.help;
                 }
 
                 try {
