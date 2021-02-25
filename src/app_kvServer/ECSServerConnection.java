@@ -1,19 +1,25 @@
 package app_kvServer;
 
-import app_kvServer.storage.IKVStorage;
 import app_kvServer.IKVServer.State;
+import app_kvServer.storage.IKVStorage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import ecs.ECSHashRing;
+import ecs.ECSNode;
+import ecs.ZkECSNode;
+import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
-import shared.messages.KVMessage;
-import shared.messages.KVMessageProto;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
 import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -28,25 +34,42 @@ public class ECSServerConnection {
     private static final Logger logger = Logger.getRootLogger();
 
     private final KVServer server;
-    private String connectedHost;
+    private final ZooKeeperService zkService;
+    private final String zNode;
+    private ECSHashRing<ECSNode> allEcsNodes;
 
     /**
      * Constructs a new ECS Server Connection object for a given node.
      *
-     * @param server the server for which to maintain the connection.
+     * @param server    the server for which to maintain the connection.
+     * @param zkService the ZooKeeperService instance to manipulate nodes.
      */
-    public ECSServerConnection(KVServer server) {
+    public ECSServerConnection(KVServer server, ZooKeeperService zkService) {
         this.server = server;
-        this.connectedHost = null;
+        this.zkService = zkService;
+        this.zNode = ZooKeeperService.ZK_SERVERS + "/" + server.getServerName();
+
+        try {
+            zkService.createNode(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.EMPTY), true);
+        } catch (IOException e) {
+            logger.error("Error creating node", e);
+        }
+
+        allEcsNodes = ECSHashRing.fromConfig(String
+                .format("%s %s %d", server.getServerName(), server.getHostname(), server.getPort()), ECSNode::fromConfig);
+
+        zkService.watchDataForever(zNode, this::handleRequest);
+        zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
+    }
+
+    public void handleMetadataUpdate(byte[] input) {
+        allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ECSNode::fromConfig);
     }
 
     /**
-     * Method to handle receiving a KVMessage using this socket.
-     *
-     * @return KVMessageProto response to send to client
-     * @throws IOException on client disconnected
+     * Parent method to handle receiving a KVAdminMessage.
      */
-    private KVAdminMessageProto handleRequest(byte[] input) throws IOException {
+    private void handleRequest(byte[] input) {
         KVAdminMessageProto req;
         try {
             try {
@@ -55,202 +78,133 @@ public class ECSServerConnection {
                 throw new KVServerException("Malformed request", KVAdminMessage.AdminStatusType.FAILED);
             }
 
+            //prevent feedback loop
+            if (req.getSender().equals(server.getServerName())) {
+                return;
+            }
+
             logger.debug("Responding to request on " + server.getPort());
             switch (req.getStatus()) {
                 case START:
-                    return handleStart();
+                    handleStart();
+                    break;
                 case STOP:
-                    return handleStop();
+                    handleStop();
+                    break;
                 case SHUTDOWN:
-                    return handleShutdown();
+                    handleShutdown();
+                    break;
                 case LOCK:
-                    return handleLock();
+                    handleLock();
+                    break;
                 case UNLOCK:
-                    return handleUnlock();
+                    handleUnlock();
+                    break;
                 case MOVE_DATA:
-                    return handleMove(req);
+                    handleMove(req);
+                    break;
                 case TRANSFER_REQ:
-                    return handleTransfer();
-                case TRANSFER_BEGIN:
-                    return handleTransferBegin(req);
+                    handleTransfer();
+                    break;
             }
             throw new KVServerException("Bad request type", KVAdminMessage.AdminStatusType.FAILED);
-        } catch (KVServerException e) {
-            logger.warn(String.format("Error processing request (%s): %s", e.getErrorCode(), e.getMessage()));
-            return new KVAdminMessageProto(
-                    server.getName(),
-                    KVAdminMessage.AdminStatusType.ERROR,
-                    e.getMessage()
-            );
+        } catch (KVServerException | IOException e) {
+            logger.warn(String.format("Error processing request: %s", e.getMessage()));
         }
     }
 
-    /**
-     * Helps clean up {@link #handleRequest(InputStream)}
-     *
-     * @param req request to process
-     * @return KVMessageProto response to send to client
-     * @throws KVServerException to communicate an expected general error (e.g. {@link KVMessage.StatusType#SERVER_NOT_RESPONSIBLE})
-     */
-    private KVMessageProto handleGet(KVMessageProto req) throws KVServerException {
-        try {
-            return new KVMessageProto(KVMessage.StatusType.GET_SUCCESS, req.getKey(), server.getKV(req.getKey()), req.getId());
-        } catch (KVServerException e) {
-            if (e.getErrorCode() != KVMessage.StatusType.GET_ERROR) throw e;
-            return new KVMessageProto(KVMessage.StatusType.GET_ERROR, req.getKey(), req.getId());
-        } catch (Exception e) {
-            return new KVMessageProto(KVMessage.StatusType.GET_ERROR, req.getKey(), req.getId());
-        }
-    }
-
-    /**
-     * Helps clean up {@link #handleRequest(InputStream)}
-     *
-     * @param req request to process
-     * @return KVMessageProto response to send to client
-     * @throws KVServerException to communicate an expected general error (e.g. {@link KVMessage.StatusType#SERVER_NOT_RESPONSIBLE})
-     */
-    private KVMessageProto handlePut(KVMessageProto req) throws KVServerException {
-        try {
-            // TODO: concurrency bug here could cause two clients to both receive "PUT_SUCCESS"
-            final KVMessage.StatusType putStatus = (server.inCache(req.getKey()) || server.inStorage(req.getKey()))
-                    ? KVMessage.StatusType.PUT_UPDATE
-                    : KVMessage.StatusType.PUT_SUCCESS;
-
-            server.putKV(req.getKey(), req.getValue());
-            return new KVMessageProto(putStatus, req.getKey(), req.getValue(), req.getId());
-        } catch (KVServerException e) {
-            if (e.getErrorCode() != KVMessage.StatusType.PUT_ERROR) throw e;
-            return new KVMessageProto(KVMessage.StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
-        } catch (Exception e) {
-            return new KVMessageProto(KVMessage.StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
-        }
-    }
-
-    /**
-     * Helps clean up {@link #handleRequest(InputStream)}
-     *
-     * @param req request to process
-     * @return KVMessageProto response to send to client
-     * @throws KVServerException to communicate an expected general error (e.g. {@link KVMessage.StatusType#SERVER_NOT_RESPONSIBLE})
-     */
-    private KVMessageProto handleDelete(KVMessageProto req) throws KVServerException {
-        try {
-            server.putKV(req.getKey(), req.getValue());
-            return new KVMessageProto(KVMessage.StatusType.DELETE_SUCCESS, req.getKey(), req.getValue(), req.getId());
-        } catch (KVServerException e) {
-            if (e.getErrorCode() != KVMessage.StatusType.DELETE_ERROR) throw e;
-            return new KVMessageProto(KVMessage.StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
-        } catch (Exception e) {
-            return new KVMessageProto(KVMessage.StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
-        }
-    }
-
-
-    private KVAdminMessageProto handleStart() {
+    private void handleStart() throws IOException {
         server.setServerState(State.STARTED);
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.START_ACK);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.START_ACK).getBytes());
     }
 
-    private KVAdminMessageProto handleStop() {
+    private void handleStop() throws IOException {
         server.setServerState(State.STOPPED);
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.STOP_ACK);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.STOP_ACK).getBytes());
     }
 
-    private KVAdminMessageProto handleShutdown() {
+    private void handleShutdown() throws IOException {
         server.close();
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
     }
 
-    private KVAdminMessageProto handleLock()  {
-        //if server is locked just return the ack
+    private void handleLock() throws IOException {
         server.setServerState(State.LOCKED);
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.LOCK_ACK);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.LOCK_ACK).getBytes());
     }
 
-    private KVAdminMessageProto handleUnlock() {
+    private void handleUnlock() throws IOException {
         server.setServerState(State.UNLOCKED);
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
     }
 
-    private KVAdminMessageProto handleTransfer() throws IOException {
+    private void handleTransfer() throws IOException {
 
-        ServerSocket socket = null;
-        try {
-            socket = new ServerSocket(0);
-        } catch (IOException e) {
-            throw(e);
-        }
+        ServerSocket socket;
+        socket = new ServerSocket(0);
 
         int portNum = socket.getLocalPort();
-        ServerSocket finalSocket = socket;
-        new Thread(){
-            @Override
-            public void run() {
-                try {
-                    Socket IOSocket = finalSocket.accept();
-                    try (BufferedReader in = new BufferedReader(new InputStreamReader(IOSocket.getInputStream()))) {
-                        server.putAllFromKvStream(in.lines());
-                    } catch (IOException e) {
-                        logger.error("Error occurred during data transfer", e);
-                    }
+
+        KVAdminMessageProto ack = new ZkECSNode(server.getServerName(), server.getHostname(), server.getPort())
+                .sendMessage(zkService, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK, Integer.toString(portNum)), 5000, TimeUnit.MILLISECONDS);
+
+        if (ack.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_BEGIN) {
+
+            try {
+                Socket IOSocket = socket.accept();
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(IOSocket.getInputStream()))) {
+                    server.putAllFromKvStream(in.lines());
+
                 } catch (IOException e) {
-                    logger.error("Error occurred during data receive", e);
+                    logger.error("Error occurred during data transfer", e);
                 }
+                zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
+            } catch (IOException e) {
+                logger.error("Error occurred during data receive", e);
             }
-        }.start();
-
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK, Integer.toString(portNum));
+        }
     }
 
-    //just open port
-    private KVAdminMessageProto handleMove(KVAdminMessageProto req) throws IOException {
-        Socket IOSocket = null;
-        //TODO: figure out how to parse this maybe helper method
-        String hostName = "";
-        int portNum = 0;
-        //transferring
+    private void handleMove(KVAdminMessageProto req) throws IOException {
 
+        KVAdminMessageProto ack = new ZkECSNode(server.getServerName(), server.getHostname(), server.getPort())
+                .sendMessage(zkService, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK), 5000, TimeUnit.MILLISECONDS);
+        if (ack.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_BEGIN) {
+            Socket socket;
+            String[] fullAddr = req.getAddress().split(":");
+            socket = new Socket(fullAddr[0], Integer.parseInt(fullAddr[1]));
 
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK);
-    }
+            String[] range = req.getRange();
+            BigInteger l = new BigInteger(range[0], 16);
+            BigInteger r = new BigInteger(range[1], 16);
 
-    //TODO: ask Arjun KVAdminMessageProto has one with range, address but if we're stateless
-    //TODO: wouldn't those need to be split into one with only range and one with only address?
-    private KVAdminMessageProto handleTransferBegin(KVAdminMessageProto req) {
-        String[] range = req.getRange();
-        // TODO: helper method to parse range, need to know min, max, l, r
-        BigInteger l = BigInteger.valueOf(0);
-        BigInteger r = BigInteger.valueOf(0);
-        BigInteger min = BigInteger.valueOf(0);
-        BigInteger max = BigInteger.valueOf(0);
-
-        Predicate<IKVStorage.KVPair> filter = kvPair -> {
-            BigInteger hashVal = ECSHashRing.computeHash(kvPair.key);
-            //comparison could be one-lined but ugly
-            if (l.compareTo(r) <= 0) {
-                return hashVal.compareTo(l) >= 0 && hashVal.compareTo(r) <= 0;
-            } else {
-                return (hashVal.compareTo(l) >= 0 && hashVal.compareTo(max) <= 0) || (hashVal.compareTo(min) >= 0 && hashVal.compareTo(r) <= 0);
+            Predicate<IKVStorage.KVPair> filter = null;
+            switch (r.compareTo(l)) {
+                case 0: // Single node hash ring: this node is responsible for everything
+                    filter = kvPair -> true;
+                    break;
+                case 1: // Regular hash ring check: (node >= hash > predecessor)
+                    filter = kvPair -> {
+                        BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                        return (r.compareTo(hash) >= 0 && l.compareTo(hash) < 0);
+                    };
+                    break;
+                case -1: // Wraparound case: either (node >= hash) OR (hash > predecessor)
+                    filter = kvPair -> {
+                        BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                        return (r.compareTo(hash) >= 0 || l.compareTo(hash) < 0);
+                    };
+                    break;
             }
-        };
 
-        Socket IOSocket = null;
-        try {
-            IOSocket = new Socket(hostName, portNum);
-        } catch (IOException e) {
-            throw(e);
+            try (Stream<String> s = server.openKvStream(filter);
+                 PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+                s.forEach(out::println);
+                zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
+            } catch (IOException e) {
+                logger.error("Error occurred during data transfer", e);
+            }
         }
-
-        //TRANSFERRING CASE
-        try (Stream<String> s = server.openKvStream(filter);
-             PrintWriter out = new PrintWriter(IOSocket.getOutputStream(), true)) {
-            s.forEach(out::println);
-        } catch (IOException e) {
-            logger.error("Error occurred during data transfer", e);
-        }
-
-        return new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE);
     }
 
 }
