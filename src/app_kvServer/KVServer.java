@@ -4,8 +4,6 @@ import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
-import ecs.ECSHashRing;
-import ecs.ECSNode;
 import ecs.zk.ZooKeeperService;
 import logger.LogSetup;
 import org.apache.log4j.Level;
@@ -43,15 +41,11 @@ public class KVServer extends Thread implements IKVServer {
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     /**
-     * TODO (@ravi): encapsulate these two and properly init/update/etc.
-     */
-    private final ECSNode myEcsNode;
-    private final ECSHashRing<ECSNode> allEcsNodes;
-
-    /**
      * Start KV Server at given port
      *
      * @param port      given port for storage server to operate
+     * @param name      server name
+     * @param connectionString connection string used for ZooKeeper
      * @param cacheSize specifies how many key-value pairs the server is allowed
      *                  to keep in-memory
      * @param strategy  specifies the cache replacement strategy in case the cache
@@ -86,11 +80,6 @@ public class KVServer extends Thread implements IKVServer {
             this.cache = IKVCache.newInstance(cacheStrategy, cacheSize);
         }
 
-        // TODO: init and reinit these two properly somewhere else
-        allEcsNodes = ECSHashRing.fromConfig(String.format("server1 localhost %d", port), ECSNode::fromConfig);
-        myEcsNode = allEcsNodes.getNodeByName(name);
-
-
         this.start();
     }
 
@@ -112,6 +101,10 @@ public class KVServer extends Thread implements IKVServer {
     @Override
     public int getPort() {
         return port;
+    }
+
+    public String getMetadata() {
+        return this.ecsServerConnection.getMetadata();
     }
 
     @Override
@@ -150,7 +143,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        if (!myEcsNode.isResponsibleForKey(key)) {
+        if (!this.ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
@@ -186,7 +179,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        if (!myEcsNode.isResponsibleForKey(key)) {
+        if (!ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
@@ -300,13 +293,6 @@ public class KVServer extends Thread implements IKVServer {
     }
 
     /**
-     * TODO: idk if this is the implementation we'll be using once ECS module is in place
-     */
-    public String getMetadata() {
-        return this.allEcsNodes.toConfig();
-    }
-
-    /**
      * Stream all KVs from (a temp snapshot of) storage. Remember to call {@link Stream#close()} on the resulting
      * stream after it's been processed (see {@link IKVStorage#openKvStream(Predicate)} for explanation)
      *
@@ -342,8 +328,8 @@ public class KVServer extends Thread implements IKVServer {
      */
     public static void main(String[] args) {
         int portNumber, cacheSize = 10;
-        String name = "test";
-        String connectionString = "";
+        String name;
+        String connectionString;
         String policy = "FIFO";
         Level logLevel = Level.ALL;
 

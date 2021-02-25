@@ -62,7 +62,15 @@ public class ECSServerConnection {
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
     }
 
-    public void handleMetadataUpdate(byte[] input) {
+    public String getMetadata() {
+        return this.allEcsNodes.toConfig();
+    }
+
+    public ECSNode getEcsNode() {
+        return allEcsNodes.getNodeByName(server.getName());
+    }
+
+    private void handleMetadataUpdate(byte[] input) {
         allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ECSNode::fromConfig);
     }
 
