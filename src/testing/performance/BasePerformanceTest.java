@@ -9,6 +9,8 @@ import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -16,9 +18,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public abstract class BasePerformanceTest extends TestCase {
+    /**
+     * ENRON_MAIL_DIR: path to the *UNCOMPRESSED* dataset
+     * ENRON_SUBSET_MAILBOX: path to a mailbox within the dataset to use for our tests
+     */
+    private static final String ENRON_MAIL_DIR = "D:/enron_mail_20150507",
+            ENRON_SUBSET_MAILBOX = "maildir/dasovich-j/all_documents";
+
     /**
      * NUM_UNIQ_REQS: the number of unique key/value pairs to generate
      * REQ_DUPLICITY: how many times each of the unique requests should be re-attempted
@@ -26,7 +35,7 @@ public abstract class BasePerformanceTest extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    protected static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2;
+    protected static final int NUM_UNIQ_REQS = 500, REQ_DUPLICITY = 2;
 
     protected static final int CACHE_SIZE = NUM_UNIQ_REQS / 2;
     protected static final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
@@ -56,30 +65,33 @@ public abstract class BasePerformanceTest extends TestCase {
         }
     }
 
+    /**
+     * Generate a KVPair test set from a subset of the enron mail dataset
+     */
     protected static List<KVPair> generateTestSet() {
         List<KVPair> allRequests = new ArrayList<>(NUM_UNIQ_REQS * REQ_DUPLICITY);
-        List<KVPair> uniqueRequests = IntStream.range(0, NUM_UNIQ_REQS)
-                .mapToObj(i -> new KVPair(generateRandomString(KVMessageProto.MAX_KEY_SIZE), generateRandomString(KVMessageProto.MAX_VALUE_SIZE)))
+        File emailDirectory = new File(ENRON_MAIL_DIR, ENRON_SUBSET_MAILBOX);
+
+        List<KVPair> uniqueRequests = Arrays.asList(Objects.requireNonNull(emailDirectory.listFiles()))
+                .subList(0, NUM_UNIQ_REQS)
+                .stream()
+                .map(file -> {
+                    String key = file.getName(), value;
+                    try (Stream<String> lines = Files.lines(file.toPath())) {
+                        value = String.join("+", lines.toArray(String[]::new));
+                        if (value.length() > KVMessageProto.MAX_VALUE_SIZE) {
+                            value = value.substring(0, KVMessageProto.MAX_VALUE_SIZE);
+                        }
+                    } catch (Exception e) {
+                        return null;
+                    }
+                    return new KVPair(key, value);
+                })
+                .filter(Objects::nonNull)
                 .collect(Collectors.toList());
+
         for (int i = 0; i < REQ_DUPLICITY; i++) allRequests.addAll(uniqueRequests);
         return allRequests;
-    }
-
-    public static String generateRandomString(int maxlength) {
-        String alphaNumeric = String.join("", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789");
-
-        StringBuilder sb = new StringBuilder();
-        Random random = new Random();
-
-        int length = random.nextInt(maxlength);
-
-        for (int i = 0; i <= length; i++) {
-            int index = random.nextInt(alphaNumeric.length());
-            char randomChar = alphaNumeric.charAt(index);
-            sb.append(randomChar);
-        }
-
-        return sb.toString();
     }
 
     /**
