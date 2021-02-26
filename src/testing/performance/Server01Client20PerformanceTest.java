@@ -1,13 +1,15 @@
 package testing.performance;
 
-import app_kvServer.KVServer;
+import app_kvECS.ECSClient;
 import client.KVStore;
-import shared.ObjectFactory;
+import ecs.zk.ZooKeeperService;
 
-import java.util.Collections;
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
 
 public class Server01Client20PerformanceTest extends BasePerformanceTest {
     @Override
@@ -18,8 +20,21 @@ public class Server01Client20PerformanceTest extends BasePerformanceTest {
     }
 
     @Override
-    protected List<KVServer> generateNewServers() {
-        return Collections.singletonList(((KVServer) ObjectFactory.createKVServerObject(50000, CACHE_SIZE, CACHE_STRATEGY.toString())));
+    protected ECSClient generateNewServers() {
+        ECSClient ecsClient;
+        try {
+            final String TEMP_FILE_NAME = "ecs.tmp.config";
+            try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
+                Stream.of(
+                        "server1 localhost 50000"
+                ).forEach(writer::println);
+                ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to create ECS", e);
+        }
+
+        return ecsClient;
     }
 
     @Override

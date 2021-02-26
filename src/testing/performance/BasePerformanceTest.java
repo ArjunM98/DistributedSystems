@@ -1,7 +1,7 @@
 package testing.performance;
 
+import app_kvECS.ECSClient;
 import app_kvServer.IKVServer;
-import app_kvServer.KVServer;
 import app_kvServer.storage.IKVStorage.KVPair;
 import client.KVStore;
 import junit.framework.TestCase;
@@ -42,7 +42,7 @@ public abstract class BasePerformanceTest extends TestCase {
 
 
     private static final List<KVPair> REQUEST_TEST_SET;
-    private static List<KVServer> SERVERS; // TODO: replace with an ECS
+    private static ECSClient ECS;
     private static List<KVStore> CLIENTS;
 
     /*
@@ -99,9 +99,10 @@ public abstract class BasePerformanceTest extends TestCase {
      */
     @Override
     protected void setUp() throws Exception {
-        SERVERS = generateNewServers();
+        ECS = generateNewServers();
         CLIENTS = generateNewClients();
 
+        ECS.addNodes(getNumServers(), CACHE_STRATEGY.toString(), CACHE_SIZE);
         for (KVStore kvClient : CLIENTS) kvClient.connect();
     }
 
@@ -111,15 +112,12 @@ public abstract class BasePerformanceTest extends TestCase {
     @Override
     protected void tearDown() {
         for (KVStore kvClient : CLIENTS) kvClient.disconnect();
-        for (KVServer kvServer : SERVERS) {
-            kvServer.clearStorage();
-            kvServer.close();
-        }
+        ECS.shutdown();
     }
 
     protected abstract List<KVStore> generateNewClients();
 
-    protected abstract List<KVServer> generateNewServers();
+    protected abstract ECSClient generateNewServers();
 
     protected abstract int getNumClients();
 
