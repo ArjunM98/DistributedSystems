@@ -2,6 +2,7 @@ package testing.performance;
 
 import app_kvServer.KVServer;
 import client.KVStore;
+import shared.ObjectFactory;
 
 import java.util.Collections;
 import java.util.List;
@@ -18,7 +19,7 @@ public class Server01Client20PerformanceTest extends BasePerformanceTest {
 
     @Override
     protected List<KVServer> generateNewServers() {
-        return Collections.singletonList(new KVServer(50000, CACHE_SIZE, CACHE_STRATEGY.toString()));
+        return Collections.singletonList(((KVServer) ObjectFactory.createKVServerObject(50000, CACHE_SIZE, CACHE_STRATEGY.toString())));
     }
 
     @Override
