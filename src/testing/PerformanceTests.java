@@ -8,6 +8,7 @@ import junit.framework.TestCase;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.junit.Test;
+import shared.ObjectFactory;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
@@ -50,7 +51,7 @@ public class PerformanceTests extends TestCase {
             for (int i = 0; i < REQ_DUPLICITY; i++) REQUEST_TEST_SET.addAll(uniqueRequests);
 
             // 2. Client-server init
-            SERVER = new KVServer(50000, CACHE_SIZE, CACHE_STRATEGY.toString());
+            SERVER = (KVServer) ObjectFactory.createKVServerObject(50000, CACHE_SIZE, CACHE_STRATEGY.toString());
             CLIENTS = new ArrayList<>(NUM_CLIENTS);
             for (int i = 0; i < NUM_CLIENTS; i++) CLIENTS.add(new KVStore("localhost", 50000));
 

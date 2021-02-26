@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.util.function.Consumer;
 
 
 /**
@@ -23,15 +24,17 @@ public class ClientConnection implements Runnable {
 
     private final Socket clientSocket; // TODO: consider potential hanging problem
     private final KVServer server;
+    private final Consumer<ClientConnection> onDisconnect;
 
     /**
      * Constructs a new CientConnection object for a given TCP socket.
      *
      * @param clientSocket the Socket object for the client connection.
      */
-    public ClientConnection(Socket clientSocket, KVServer server) {
+    public ClientConnection(Socket clientSocket, KVServer server, Consumer<ClientConnection> onDisconnect) {
         this.server = server;
         this.clientSocket = clientSocket;
+        this.onDisconnect = onDisconnect;
     }
 
     /**
@@ -48,6 +51,18 @@ public class ClientConnection implements Runnable {
             }
         } catch (IOException e) {
             logger.info("Unable to stream to/from socket", e);
+        }
+        this.onDisconnect.accept(this);
+    }
+
+    /**
+     * Close connection with client
+     */
+    public void close() {
+        try {
+            clientSocket.close();
+        } catch (Exception e) {
+            logger.warn("Unable to terminate connection with client: " + e.getMessage());
         }
     }
 
@@ -125,7 +140,7 @@ public class ClientConnection implements Runnable {
             return new KVMessageProto(putStatus, req.getKey(), req.getValue(), req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.PUT_ERROR) throw e;
-            return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
+            return new KVMessageProto(e.getErrorCode(), req.getKey(), req.getValue(), req.getId());
         } catch (Exception e) {
             return new KVMessageProto(StatusType.PUT_ERROR, req.getKey(), req.getValue(), req.getId());
         }

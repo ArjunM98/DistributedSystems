@@ -21,7 +21,9 @@ public interface KVAdminMessage {
         TRANSFER_REQ,       /* Request server the data is going to be transferred to */
         TRANSFER_REQ_ACK,   /* Responds with details on transfer request port */
         TRANSFER_BEGIN,     /* Begin transfer */
-        TRANSFER_COMPLETE   /* Transfer between servers was successful */
+        TRANSFER_COMPLETE,  /* Transfer between servers was successful */
+        FAILED,             /* An illegal request occurred */
+        ERROR               /* An error occurred */
     }
 
     /**
