@@ -8,12 +8,11 @@ import shared.messages.KVMessageProto;
 
 import java.io.IOException;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
+
+import static java.util.stream.Collectors.toList;
 
 public class KVStore implements KVCommInterface {
     /**
@@ -96,8 +95,8 @@ public class KVStore implements KVCommInterface {
 
     @Override
     public void disconnect() {
-        serverConnections.forEach(this::disconnect);
-        serverConnections.clear();
+        List<Map.Entry<String, Socket>> toDisconnect = new ArrayList<>(serverConnections.entrySet());
+        toDisconnect.forEach(e->disconnect(e.getKey(), e.getValue()));
         hashRing.clear();
     }
 
@@ -112,6 +111,7 @@ public class KVStore implements KVCommInterface {
         } catch (IOException e) {
             logger.error(String.format("Error disconnecting from %s", connectionString), e);
         }
+        serverConnections.remove(connectionString);
     }
 
     @Override
@@ -131,11 +131,15 @@ public class KVStore implements KVCommInterface {
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
                     updateMetadata(response.getValue());
                 } else return response;
+            } catch (IOException e) {
+                disconnect(server.getConnectionString(), clientSocket);
+                hashRing.removeServer(server);
             } catch (Exception e) {
                 return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
             }
 
             // 3. If the request was not satisfied, (potentially) wait before trying again
+            logger.debug("Unable to connect to server, rerouting");
             try {
                 Thread.sleep(iTry * RETRY_BACKOFF_MILLIS);
             } catch (InterruptedException e) {
@@ -163,11 +167,15 @@ public class KVStore implements KVCommInterface {
                 if (response.getStatus() == KVMessage.StatusType.SERVER_NOT_RESPONSIBLE) {
                     updateMetadata(response.getValue());
                 } else return response;
+            } catch (IOException e) {
+                disconnect(server.getConnectionString(), clientSocket);
+                hashRing.removeServer(server);
             } catch (Exception e) {
                 return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
             }
 
             // 3. If the request was not satisfied, (potentially) wait before trying again
+            logger.debug("Unable to connect to server, rerouting");
             try {
                 Thread.sleep(iTry * RETRY_BACKOFF_MILLIS);
             } catch (InterruptedException e) {
@@ -181,12 +189,11 @@ public class KVStore implements KVCommInterface {
     private void updateMetadata(String newConfig) throws IOException {
         final ECSHashRing<ECSNode> newRing = ECSHashRing.fromConfig(newConfig, ECSNode::fromConfig);
         final Set<String> newConnectionStrings = newRing.getAllNodes().stream().map(ECSNode::getConnectionString).collect(Collectors.toSet());
-        serverConnections.entrySet().removeIf(entry -> {
-            if (!newConnectionStrings.contains(entry.getKey())) {
-                disconnect(entry.getKey(), entry.getValue());
-                return true; // disconnect from removed nodes
-            } else return false; // don't disconnect from previously active node
-        });
+
+        // Disconnect from the servers that are no longer in the hash ring
+        final List<Map.Entry<String, Socket>> toDisconnect = serverConnections.entrySet().stream()
+                .filter(entry -> !newConnectionStrings.contains(entry.getKey())).collect(Collectors.toList());
+        toDisconnect.forEach(e->disconnect(e.getKey(), e.getValue()));
 
         hashRing.clear();
         hashRing.addAll(newRing);

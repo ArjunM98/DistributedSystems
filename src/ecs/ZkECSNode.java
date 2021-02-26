@@ -82,21 +82,34 @@ public class ZkECSNode extends ECSNode {
         final CountDownLatch latch = new CountDownLatch(1);
 
         // 1. Send the message
+        byte[] originalBytes;
         try {
             zk.setData(zNode, request.getBytes());
-            zk.watchDataOnce(zNode, latch::countDown);
+            originalBytes = zk.watchDataOnce(zNode, latch::countDown);
         } catch (Exception e) {
             throw new IOException("Could not send message", e);
         }
 
-        // 2. Wait for the response
+        // 2.a) The response is already here
+        KVAdminMessageProto original;
+        try {
+            original = new KVAdminMessageProto(originalBytes);
+            logger.info(String.format("%s %s", original.getSender(), original.getStatus()));
+            if (!original.getSender().equals(request.getSender())) return original;
+        } catch (IOException e) {
+            logger.warn("Unable to read response", e);
+        }
+
+        // 2.b) Wait for the response
         boolean resRecv = false;
         try {
+            logger.info("waiting");
             resRecv = latch.await(timeout, timeUnit);
         } catch (InterruptedException e) {
             logger.warn("Unable to wait for latch to count down");
         }
 
+        logger.info("Got a response!");
         // 3. Extract response
         KVAdminMessageProto res = null;
         try {
@@ -105,9 +118,8 @@ public class ZkECSNode extends ECSNode {
             logger.warn("Unable to read response", e);
         }
 
+        logger.info("Returning a response!");
         // 4. Return response
-        logger.info(res);
-        logger.info(resRecv);
         if (res == null || !resRecv) throw new IOException("Did not receive a response");
         return res;
     }

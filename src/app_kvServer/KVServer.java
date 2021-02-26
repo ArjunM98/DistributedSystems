@@ -9,18 +9,14 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
-
 import shared.messages.KVMessage;
 
 import java.io.IOException;
 import java.net.*;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Objects;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
@@ -34,8 +30,9 @@ public class KVServer extends Thread implements IKVServer {
     private final IKVStorage storage;
 
     private final ExecutorService threadPool;
+    private final Set<ClientConnection> activeConnections;
     private ServerSocket serverSocket;
-    private IKVServer.State state;
+    private ECSServerConnection.State state;
     private final ECSServerConnection ecsServerConnection;
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
@@ -43,32 +40,33 @@ public class KVServer extends Thread implements IKVServer {
     /**
      * Start KV Server at given port
      *
-     * @param port      given port for storage server to operate
-     * @param name      server name
+     * @param port             given port for storage server to operate
+     * @param name             server name
      * @param connectionString connection string used for ZooKeeper
-     * @param cacheSize specifies how many key-value pairs the server is allowed
-     *                  to keep in-memory
-     * @param strategy  specifies the cache replacement strategy in case the cache
-     *                  is full and there is a GET- or PUT-request on a key that is
-     *                  currently not contained in the cache. Options are "FIFO", "LRU",
-     *                  and "LFU".
+     * @param cacheSize        specifies how many key-value pairs the server is allowed
+     *                         to keep in-memory
+     * @param strategy         specifies the cache replacement strategy in case the cache
+     *                         is full and there is a GET- or PUT-request on a key that is
+     *                         currently not contained in the cache. Options are "FIFO", "LRU",
+     *                         and "LFU".
      */
     public KVServer(int port, String name, String connectionString, int cacheSize, String strategy) {
 
         this.name = name;
         this.port = port;
-        this.state = IKVServer.State.STOPPED;
+        this.state = ECSServerConnection.State.STOPPED;
 
         ZooKeeperService zkService = null;
         try {
             zkService = new ZooKeeperService(connectionString);
-        } catch(IOException e) {
+        } catch (IOException e) {
             logger.error("Failed to connect to ZooKeeper", e);
         }
 
         this.ecsServerConnection = new ECSServerConnection(this, zkService);
 
         this.threadPool = Executors.newCachedThreadPool();
+        this.activeConnections = new HashSet<>();
 
         this.storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY + "/" + port);
         CacheStrategy cacheStrategy = CacheStrategy.None;
@@ -83,17 +81,14 @@ public class KVServer extends Thread implements IKVServer {
         this.start();
     }
 
-    @Override
-    public IKVServer.State getServerState() {
+    public ECSServerConnection.State getServerState() {
         return state;
     }
 
-    @Override
-    public void setServerState(IKVServer.State newState) {
+    public void setServerState(ECSServerConnection.State newState) {
         this.state = newState;
     }
 
-    @Override
     public String getServerName() {
         return name;
     }
@@ -139,7 +134,7 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public String getKV(String key) throws KVServerException {
-        if (state == IKVServer.State.STOPPED) {
+        if (state == ECSServerConnection.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
@@ -171,11 +166,11 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public void putKV(String key, String value) throws KVServerException {
-        if (state == IKVServer.State.STOPPED) {
+        if (state == ECSServerConnection.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        if (state == IKVServer.State.LOCKED) {
+        if (state == ECSServerConnection.State.LOCKED) {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
@@ -242,7 +237,13 @@ public class KVServer extends Thread implements IKVServer {
                 // TODO: look into socket config e.g. timeout, keepalive, tcp optimization, ...
                 Socket client = serverSocket.accept();
                 logger.debug("New client:" + client);
-                threadPool.execute(new ClientConnection(client, this /* reference to server process */));
+                final ClientConnection connection = new ClientConnection(
+                        client,
+                        this /* reference to server process */,
+                        activeConnections::remove
+                );
+                threadPool.execute(connection);
+                activeConnections.add(connection);
             } catch (IOException e) {
                 logger.warn("Socket error: " + e.getMessage());
             } catch (RejectedExecutionException e) {
@@ -256,8 +257,9 @@ public class KVServer extends Thread implements IKVServer {
     public void kill() {
         this.isRunning.set(false);
         try {
-            List<Runnable> awaitingClients = threadPool.shutdownNow();
-            logger.warn(String.format("%d clients were active", awaitingClients.size()));
+            threadPool.shutdownNow();
+            logger.warn(String.format("%d clients were active", activeConnections.size()));
+            activeConnections.forEach(ClientConnection::close);
         } catch (Exception e) {
             logger.error("Unable to cleanly terminate threads", e);
         }
@@ -273,24 +275,7 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public void close() {
-        final long TIMEOUT_MILLIS = 5000L; // how long to wait for threads to cleanup
-
-        this.isRunning.set(false);
-        try {
-            threadPool.shutdown();
-            if (!threadPool.awaitTermination(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS))
-                logger.warn("Some clients may still be active (termination wait timeout)");
-        } catch (Exception e) {
-            logger.error("Unable to cleanly terminate", e);
-        }
-
-        try {
-            serverSocket.close();
-        } catch (Exception e) {
-            logger.error("Unable to cleanly terminate socket", e);
-        }
-
-        this.clearCache();
+        this.kill();
     }
 
     /**
@@ -374,7 +359,7 @@ public class KVServer extends Thread implements IKVServer {
 
         // 2. Initialize logger
         try {
-            new LogSetup("logs/server.log", logLevel);
+            new LogSetup("logs/" + name + ".log", logLevel);
         } catch (IOException e) {
             System.err.println("Logger error: " + e);
             System.exit(1);

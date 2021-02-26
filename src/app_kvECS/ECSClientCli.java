@@ -118,7 +118,7 @@ public class ECSClientCli implements Runnable {
         int num, cacheSize;
         try {
             num = Integer.parseInt(args.get(0));
-            cacheSize = Integer.parseInt(args.get(1));
+            cacheSize = Integer.parseInt(args.get(2));
         } catch (NumberFormatException e) {
             System.out.println("Please provide a valid number of servers/cacheSize");
             return;

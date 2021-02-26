@@ -8,12 +8,19 @@ import shared.messages.KVAdminMessageProto;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 public class ZooKeeperService {
     public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
     private static final Logger logger = Logger.getRootLogger();
     private final ZooKeeper zooKeeper;
+
+    /**
+     * Thread pool to use for watcher and async callbacks
+     */
+    private final ExecutorService THREAD_POOL = Executors.newCachedThreadPool();
 
     /**
      * Establishes Connection to the Zookeeper Ensemble
@@ -105,12 +112,15 @@ public class ZooKeeperService {
      * Set a watch on the data of a node. Persists only until the node's data is changed ONCE.
      *
      * @param node     - the path to the zNode who we want to watch
-     * @param onChange - a {@link Runnable} to run *synchronously* once we receive the desired event
+     * @param onChange - a {@link Runnable} to run *in a new thread* once we receive the desired event
+     * @throws IOException on failure
      */
-    public void watchDataOnce(final String node, Runnable onChange) {
-        final AsyncCallback.DataCallback noop = (i, s, o, bytes, stat) -> {
-        };
-        zooKeeper.getData(node, generateOneTimeDataWatcher(this, node, onChange), noop, null);
+    public byte[] watchDataOnce(final String node, Runnable onChange) throws IOException {
+        try {
+            return zooKeeper.getData(node, generateOneTimeDataWatcher(this, node, onChange), null);
+        } catch (Exception e) {
+            throw new IOException("Could not set data watcher", e);
+        }
     }
 
     /**
@@ -120,7 +130,7 @@ public class ZooKeeperService {
      * @param consumeData - a {@link Consumer} that takes in a byte array i.e. the contents of the node
      */
     public void watchDataForever(final String node, Consumer<byte[]> consumeData) {
-        final AsyncCallback.DataCallback callback = (i, s, o, bytes, stat) -> consumeData.accept(bytes);
+        final AsyncCallback.DataCallback callback = (i, s, o, bytes, stat) -> THREAD_POOL.execute(()->consumeData.accept(bytes));
         zooKeeper.getData(node, generatePersistentDataWatcher(this, node, consumeData), callback, null);
     }
 
@@ -131,7 +141,7 @@ public class ZooKeeperService {
      * @param consumeChildren - a {@link Consumer} that takes in a list of strings i.e. the paths of the children
      */
     public void watchChildrenForever(final String node, Consumer<List<String>> consumeChildren) {
-        final AsyncCallback.Children2Callback callback = (i, s, o, list, stat) -> consumeChildren.accept(list);
+        final AsyncCallback.Children2Callback callback = (i, s, o, list, stat) -> THREAD_POOL.execute(()->consumeChildren.accept(list));
         zooKeeper.getChildren(node, generatePersistentChildWatcher(this, node, consumeChildren), callback, null);
     }
 
@@ -139,12 +149,15 @@ public class ZooKeeperService {
      * Set a watch on the deletion of a node. Persists until the node is deleted.
      *
      * @param node      the path to the zNode who we want to watch
-     * @param onDeleted a {@link Runnable} to run *synchronously* once we receive the desired event
+     * @param onDeleted a {@link Runnable} to run *in a new thread* once we receive the desired event
+     * @throws IOException on failure
      */
-    public void watchDeletion(final String node, Runnable onDeleted) {
-        final AsyncCallback.DataCallback noop = (i, s, o, bytes, stat) -> {
-        };
-        zooKeeper.getData(node, generateDeletionWatcher(this, node, onDeleted), noop, null);
+    public byte[] watchDeletion(final String node, Runnable onDeleted) throws IOException {
+        try {
+            return zooKeeper.getData(node, generateDeletionWatcher(this, node, onDeleted), null);
+        } catch (Exception e) {
+            throw new IOException("Could not set deletion watcher", e);
+        }
     }
 
     /**
@@ -152,12 +165,12 @@ public class ZooKeeperService {
      *
      * @param zk         a {@link ZooKeeperService} instance to use for the getData call
      * @param zNode      the path to the zNode whose data we want to watch
-     * @param onComplete a {@link Runnable} to run *synchronously* once we recieve the desired event
+     * @param onComplete a {@link Runnable} to run *in a new thread* once we receive the desired event
      */
     private static Watcher generateOneTimeDataWatcher(ZooKeeperService zk, String zNode, Runnable onComplete) {
         return watchedEvent -> {
             if (watchedEvent.getType() == Watcher.Event.EventType.NodeDataChanged) {
-                onComplete.run();
+                zk.THREAD_POOL.execute(onComplete);
             } else try {
                 zk.watchDataOnce(zNode, onComplete);
             } catch (Exception ignored) {
@@ -193,12 +206,12 @@ public class ZooKeeperService {
      *
      * @param zk         a {@link ZooKeeperService} instance to use for the getData call
      * @param zNode      the path to the zNode whose data we want to watch
-     * @param onComplete a {@link Runnable} to run *synchronously* once we recieve the desired event
+     * @param onComplete a {@link Runnable} to run *in a new thread* once we recieve the desired event
      */
     private static Watcher generateDeletionWatcher(ZooKeeperService zk, String zNode, Runnable onComplete) {
         return watchedEvent -> {
             if (watchedEvent.getType() == Watcher.Event.EventType.NodeDeleted) {
-                onComplete.run();
+                zk.THREAD_POOL.execute(onComplete);
             } else try {
                 zk.watchDeletion(zNode, onComplete);
             } catch (Exception ignored) {

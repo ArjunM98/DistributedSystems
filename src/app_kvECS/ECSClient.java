@@ -361,43 +361,31 @@ public class ECSClient implements IECSClient {
         boolean transferExecution = executeTransfers(transferList);
         successfulStop = successfulStop && transferExecution;
 
+        // shutdown respective servers
+        for (ZkECSNode server : newHashRing.getAllNodes()) {
+            if (server.getNodeStatus() == ServerStatus.STOPPING) {
+                try {
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.SHUTDOWN
+                    ), 10000, TimeUnit.MILLISECONDS);
+                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
+                    server.setNodeStatus(ServerStatus.OFFLINE);
+                    newHashRing.removeServer(server);
+                    ECSNodeRepo.add(server);
+                } catch (IOException e) {
+                    server.setNodeStatus(ServerStatus.STOPPED);
+                    successfulStop = false;
+                    logger.warn("Unable to shutdown servers");
+                }
+            }
+        }
+
         // Update data
         try {
-            zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toString().getBytes(StandardCharsets.UTF_8));
+            zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toConfig().getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             logger.warn("Unable to update metadata", e);
-        }
-
-        // Release write lock
-        for (HashRangeTransfer transfer : transferList) {
-            try {
-                KVAdminMessageProto ack = transfer.getDestinationNode().sendMessage(zk, new KVAdminMessageProto(
-                        ECS_NAME,
-                        KVAdminMessage.AdminStatusType.UNLOCK
-                ), 5000, TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.UNLOCK_ACK) throw new IOException();
-            } catch (IOException e) {
-                successfulStop = false;
-                logger.warn("Unable to release lock on locked servers");
-            }
-        }
-
-        // shutdown respective servers
-        for (HashRangeTransfer transfer : transferList) {
-            try {
-                KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
-                        ECS_NAME,
-                        KVAdminMessage.AdminStatusType.SHUTDOWN
-                ), 5000, TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
-                transfer.getSourceNode().setNodeStatus(ServerStatus.OFFLINE);
-                newHashRing.removeServer(transfer.getSourceNode());
-                ECSNodeRepo.add(transfer.getSourceNode());
-            } catch (IOException e) {
-                transfer.getSourceNode().setNodeStatus(ServerStatus.STOPPED);
-                successfulStop = false;
-                logger.warn("Unable to release lock on locked servers");
-            }
         }
 
         hashRing = newHashRing;
@@ -532,9 +520,11 @@ public class ECSClient implements IECSClient {
      */
     public void handleNodeFailure(ZkECSNode node) {
 
+        logger.info("Node faliure triggered");
         // Check whether the node is currently active:
         ECSNode serverFailed = hashRing.getNodeByName(node.getNodeName());
         if (serverFailed != null) {
+            logger.info((serverFailed.getNodeName()));
             // need to recover from an active server failure
             node.setNodeStatus(ServerStatus.OFFLINE);
             // remove from the node pool
@@ -543,7 +533,7 @@ public class ECSClient implements IECSClient {
             ECSNodeRepo.add(node);
             // send metadata update to everyone
             try {
-                zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toString().getBytes(StandardCharsets.UTF_8));
+                zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 logger.error("Unable to send metadata", e);
             }

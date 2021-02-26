@@ -1,6 +1,5 @@
 package app_kvServer;
 
-import app_kvServer.IKVServer.State;
 import app_kvServer.storage.IKVStorage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import ecs.ECSHashRing;
@@ -19,7 +18,9 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.*;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -73,6 +74,7 @@ public class ECSServerConnection {
     }
 
     private void handleMetadataUpdate(byte[] input) {
+        logger.info("Handling Metadata Update");
         allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ZkECSNode::fromConfig);
     }
 
@@ -124,6 +126,8 @@ public class ECSServerConnection {
                     handleTransferBegin();
                     return;
                 default:
+                    logger.info(req.getSender());
+                    logger.info(server.getServerName());
                     throw new KVServerException(String.format("Bad request type: %s", req.getStatus()), KVAdminMessage.AdminStatusType.FAILED);
             }
         } catch (KVServerException | IOException e) {
@@ -148,6 +152,8 @@ public class ECSServerConnection {
     }
 
     private void handleShutdown() throws IOException {
+        server.setServerState(State.STOPPED);
+        server.clearStorage();
         server.close();
         zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
     }
@@ -165,8 +171,7 @@ public class ECSServerConnection {
     }
 
     private void handleTransfer() throws IOException {
-        ServerSocket socket;
-        socket = new ServerSocket(0);
+        ServerSocket socket = new ServerSocket(0);
 
         int portNum = socket.getLocalPort();
         logger.info("HANDLING TRANSFER");
@@ -266,5 +271,16 @@ public class ECSServerConnection {
 
     private void handleTransferBegin() {
         transferLatch.countDown();
+    }
+
+    public enum State {
+        ALIVE,             /* Server is alive, but not started */
+        DEAD,              /* Server is not alive */
+        STARTED,           /* Server is active and ready to respond */
+        STOPPED,           /* Server is alive but not responding to requests */
+        LOCKED,            /* Server is write locked */
+        UNLOCKED,          /* Server is not locked */
+        SENDING_TRANSFER,  /* Server is sending data */
+        RECEIVING_TRANSFER /* Server is receiving data */
     }
 }
