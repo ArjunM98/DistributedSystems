@@ -185,9 +185,6 @@ public class ECSServerConnection {
             } catch (InterruptedException e) {
                 logger.warn("Unable to wait for latch to count down");
             }
-//        KVAdminMessageProto ack = ((ZkECSNode) getEcsNode())
-//                .sendMessage(zkService, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK, Integer.toString(portNum)), 15000, TimeUnit.MILLISECONDS);
-//        logger.info(ack.getStatus().toString());
 
             if (beginReceived) {
                 logger.info("HANDLE TRANSFER GOT TRANSFER BEGIN");
@@ -220,9 +217,7 @@ public class ECSServerConnection {
             } catch (InterruptedException e) {
                 logger.warn("Unable to wait for latch to count down");
             }
-//        KVAdminMessageProto ack = ((ZkECSNode) getEcsNode())
-//                .sendMessage(zkService, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK), 15000, TimeUnit.MILLISECONDS);
-//        logger.info(ack.getStatus().toString());
+
             if (beginReceived) {
                 logger.info("HANDLE MOVE GOT TRANSFER BEGIN");
                 Socket socket = null;
