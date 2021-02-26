@@ -90,46 +90,4 @@ public class ECSTests extends TestCase {
         System.out.printf("Added %s to the queued storage service%n", node.getNodeName());
     }
 
-    /**
-     * Test setting up a new connection to the server added in storage service
-     */
-    @Test
-    public void testNewServerConnection() {
-
-        Map<String,IECSNode> activeNodes = ecs.getNodes();
-        assertNotSame(activeNodes.size(), 0);
-
-        int validPort = 0;
-        for(Map.Entry<String,IECSNode> entry : activeNodes.entrySet()) {
-            validPort = entry.getValue().getNodePort();
-            /* Only need the very first entry */
-            break;
-        }
-
-        Exception ex = null;
-        kvClient = new KVStore("localhost", validPort);
-        try {
-            kvClient.connect();
-        } catch (Exception e) {
-            ex = e;
-        }
-        assertNull(ex);
-    }
-
-//    /**
-//     * Test the successful start up of the previously added server
-//     */
-//    @Test
-//    public void testStartNode() {
-//        boolean startSuccess = false;
-//        try {
-//            startSuccess = ecs.start();
-//        } catch (Exception e) {
-//            e.printStackTrace();
-//        }
-//
-//        assertEquals(startSuccess, true);
-//        System.out.printf("Storage service was added successfully");
-//    }
-
 }
