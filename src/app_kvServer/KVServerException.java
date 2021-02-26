@@ -1,7 +1,7 @@
 package app_kvServer;
 
-import shared.messages.KVMessage.StatusType;
 import shared.messages.KVAdminMessage.AdminStatusType;
+import shared.messages.KVMessage.StatusType;
 
 /**
  * Custom exception class to return more meaningful messages from {@link KVServer}

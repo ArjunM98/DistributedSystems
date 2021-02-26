@@ -12,8 +12,6 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import static java.util.stream.Collectors.toList;
-
 public class KVStore implements KVCommInterface {
     /**
      * MAX_RETRIES: number of times to re-attempt a SERVER_NOT_RESPONSIBLE message, in case metadata is rapidly changing
@@ -96,7 +94,7 @@ public class KVStore implements KVCommInterface {
     @Override
     public void disconnect() {
         List<Map.Entry<String, Socket>> toDisconnect = new ArrayList<>(serverConnections.entrySet());
-        toDisconnect.forEach(e->disconnect(e.getKey(), e.getValue()));
+        toDisconnect.forEach(e -> disconnect(e.getKey(), e.getValue()));
         hashRing.clear();
     }
 
@@ -193,7 +191,7 @@ public class KVStore implements KVCommInterface {
         // Disconnect from the servers that are no longer in the hash ring
         final List<Map.Entry<String, Socket>> toDisconnect = serverConnections.entrySet().stream()
                 .filter(entry -> !newConnectionStrings.contains(entry.getKey())).collect(Collectors.toList());
-        toDisconnect.forEach(e->disconnect(e.getKey(), e.getValue()));
+        toDisconnect.forEach(e -> disconnect(e.getKey(), e.getValue()));
 
         hashRing.clear();
         hashRing.addAll(newRing);

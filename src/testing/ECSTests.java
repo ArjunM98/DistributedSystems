@@ -13,8 +13,6 @@ import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
 import java.io.IOException;
-import java.util.Collection;
-import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +29,7 @@ public class ECSTests extends TestCase {
             new LogSetup("logs/testing/test.log", Level.DEBUG);
 
             // 2. Setup ECS connection
-            String filePath = "ecs.config", zkConnStr = "localhost:2181";
+            String filePath = "ecs.config", zkConnStr = ZooKeeperService.LOCALHOST_CONNSTR;
             ecs = new ECSClient(filePath, zkConnStr);
             zk = new ZooKeeperService(zkConnStr);
         } catch (Exception e) {

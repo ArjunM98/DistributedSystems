@@ -4,7 +4,6 @@ import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
-import ecs.zk.ZooKeeperService;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -13,7 +12,10 @@ import shared.messages.KVMessage;
 
 import java.io.IOException;
 import java.net.*;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -51,19 +53,15 @@ public class KVServer extends Thread implements IKVServer {
      *                         and "LFU".
      */
     public KVServer(int port, String name, String connectionString, int cacheSize, String strategy) {
-
         this.name = name;
         this.port = port;
         this.state = ECSServerConnection.State.STOPPED;
 
-        ZooKeeperService zkService = null;
         try {
-            zkService = new ZooKeeperService(connectionString);
-        } catch (IOException e) {
-            logger.error("Failed to connect to ZooKeeper", e);
+            this.ecsServerConnection = new ECSServerConnection(this, connectionString);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to connect to ZooKeeper", e);
         }
-
-        this.ecsServerConnection = new ECSServerConnection(this, zkService);
 
         this.threadPool = Executors.newCachedThreadPool();
         this.activeConnections = new HashSet<>();
@@ -81,11 +79,7 @@ public class KVServer extends Thread implements IKVServer {
         this.start();
     }
 
-    public ECSServerConnection.State getServerState() {
-        return state;
-    }
-
-    public void setServerState(ECSServerConnection.State newState) {
+    public void updateServerState(ECSServerConnection.State newState) {
         this.state = newState;
     }
 

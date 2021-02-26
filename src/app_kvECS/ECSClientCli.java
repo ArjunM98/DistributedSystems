@@ -1,6 +1,7 @@
 package app_kvECS;
 
 import ecs.IECSNode;
+import ecs.zk.ZooKeeperService;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -30,7 +31,7 @@ public class ECSClientCli implements Runnable {
      * @param args passed in through cli
      */
     public ECSClientCli(String[] args) {
-        String ecsConfigPath, zkConnectionString = "localhost:2181";
+        String ecsConfigPath, zkConnectionString = ZooKeeperService.LOCALHOST_CONNSTR;
         Level logLevel = Level.ALL;
 
         // 1. Validate args

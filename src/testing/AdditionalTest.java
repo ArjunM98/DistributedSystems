@@ -1,9 +1,7 @@
 package testing;
 
 import app_kvServer.IKVServer.CacheStrategy;
-import app_kvServer.KVServer;
 import app_kvServer.cache.IKVCache;
-import app_kvServer.storage.IKVStorage.KVPair;
 import client.KVStore;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
@@ -15,11 +13,6 @@ import shared.messages.KVMessageProto;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
-import java.util.Arrays;
-import java.util.Set;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import static org.junit.Assert.assertArrayEquals;
 
@@ -447,62 +440,5 @@ public class AdditionalTest extends TestCase {
         final String[] expected = ecsConfigFileBlob.lines().sorted().toArray(String[]::new);
         final String[] actual = serializedBlob.lines().sorted().toArray(String[]::new);
         assertArrayEquals(expected, actual);
-    }
-
-    /**
-     * Tests {@link app_kvServer.KVServer} full storage serialization/deserialization
-     * <p>
-     * TODO (@ravi?): the to/from should probably be done across a communication module/socket between the servers
-     * i.e. instead of `destination.putAllFromKvStream(source.openKvStream(...))`
-     */
-    @Test
-    public void testKvServerDataTransfer() throws Exception {
-        // 1. Prepare two sets of requests
-        final int NUM_REQ_PER_BATCH = 50;
-        final Set<KVPair> batch1 = IntStream.range(0, NUM_REQ_PER_BATCH).mapToObj(i -> new KVPair("dt_key_1_" + i, "dt_value_1_" + i)).collect(Collectors.toSet());
-        final Set<KVPair> batch2 = IntStream.range(0, NUM_REQ_PER_BATCH).mapToObj(i -> new KVPair("dt_key_2_" + i, "dt_value_2_" + i)).collect(Collectors.toSet());
-
-        // 2. Prepare servers
-        final KVServer original = new KVServer(42069, "original", "localhost", NUM_REQ_PER_BATCH, "FIFO"),
-                newFullCopy = new KVServer(42070, "full_copy", "localhost", NUM_REQ_PER_BATCH, "FIFO"),
-                newB1deleted = new KVServer(42071, "b1_deleted", "localhost", NUM_REQ_PER_BATCH, "FIFO");
-
-        // 3. Prepare client
-        final KVStore client = new KVStore("localhost", 42069);
-        client.connect();
-
-        // 4. First we'll populate the original server with everything and check if we can successfully transfer that
-        final int NUM_OVERWRITES = 3;
-        for (int i = 0; i < NUM_OVERWRITES; i++) { // overwrite it a few times to make sure compaction works well
-            for (KVPair kv : batch1) client.put(kv.key, kv.value);
-            for (KVPair kv : batch2) client.put(kv.key, kv.value);
-        }
-        newFullCopy.putAllFromKvStream(original.openKvStream(e -> true));
-
-        for (KVPair kv : batch1) {
-            assertEquals(String.format("Transfer failed for '%s'", kv.key), kv.value, newFullCopy.getKV(kv.key));
-        }
-        for (KVPair kv : batch2) {
-            assertEquals(String.format("Transfer failed for '%s'", kv.key), kv.value, newFullCopy.getKV(kv.key));
-        }
-
-        // 5. Now we'll delete the keys from batch1, transfer, and make sure it works still
-        for (int i = 0; i < NUM_OVERWRITES; i++) { // overwrite it a few times to make sure compaction works well
-            for (KVPair kv : batch1) client.put(kv.key, null);
-        }
-        newB1deleted.putAllFromKvStream(original.openKvStream(e -> true));
-
-        for (KVPair kv : batch1) {
-            assertFalse(String.format("Transfer failed for '%s'", kv.key), newB1deleted.inStorage(kv.key));
-        }
-        for (KVPair kv : batch2) {
-            assertEquals(String.format("Transfer failed for '%s'", kv.key), kv.value, newB1deleted.getKV(kv.key));
-        }
-
-        // 6. Clean up
-        Arrays.asList(original, newFullCopy, newB1deleted).forEach(server -> {
-            server.clearStorage();
-            server.close();
-        });
     }
 }

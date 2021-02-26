@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 public class ZooKeeperService {
+    public static final String LOCALHOST_CONNSTR = "localhost:2181";
     public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
     private static final Logger logger = Logger.getRootLogger();
     private final ZooKeeper zooKeeper;
@@ -130,7 +131,7 @@ public class ZooKeeperService {
      * @param consumeData - a {@link Consumer} that takes in a byte array i.e. the contents of the node
      */
     public void watchDataForever(final String node, Consumer<byte[]> consumeData) {
-        final AsyncCallback.DataCallback callback = (i, s, o, bytes, stat) -> THREAD_POOL.execute(()->consumeData.accept(bytes));
+        final AsyncCallback.DataCallback callback = (i, s, o, bytes, stat) -> THREAD_POOL.execute(() -> consumeData.accept(bytes));
         zooKeeper.getData(node, generatePersistentDataWatcher(this, node, consumeData), callback, null);
     }
 
@@ -141,7 +142,7 @@ public class ZooKeeperService {
      * @param consumeChildren - a {@link Consumer} that takes in a list of strings i.e. the paths of the children
      */
     public void watchChildrenForever(final String node, Consumer<List<String>> consumeChildren) {
-        final AsyncCallback.Children2Callback callback = (i, s, o, list, stat) -> THREAD_POOL.execute(()->consumeChildren.accept(list));
+        final AsyncCallback.Children2Callback callback = (i, s, o, list, stat) -> THREAD_POOL.execute(() -> consumeChildren.accept(list));
         zooKeeper.getChildren(node, generatePersistentChildWatcher(this, node, consumeChildren), callback, null);
     }
 

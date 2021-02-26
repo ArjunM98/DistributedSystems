@@ -4,7 +4,6 @@ import app_kvServer.storage.IKVStorage;
 import com.google.protobuf.InvalidProtocolBufferException;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
-import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
 import shared.messages.KVAdminMessage;
@@ -18,6 +17,7 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -38,28 +38,28 @@ public class ECSServerConnection {
     private final ZooKeeperService zkService;
     private final String zNode;
 
-    private ECSHashRing<ZkECSNode> allEcsNodes;
+    private final ECSHashRing<ECSNode> allEcsNodes;
     private CountDownLatch transferLatch;
 
     /**
      * Constructs a new ECS Server Connection object for a given node.
      *
-     * @param server    the server for which to maintain the connection.
-     * @param zkService the ZooKeeperService instance to manipulate nodes.
+     * @param server             the server for which to maintain the connection.
+     * @param zkConnectionString to the ZooKeeperService instance to manipulate nodes.
+     * @throws IOException on failure to connect to ZooKeeper
      */
-    public ECSServerConnection(KVServer server, ZooKeeperService zkService) {
+    public ECSServerConnection(KVServer server, String zkConnectionString) throws IOException {
         this.server = server;
-        this.zkService = zkService;
         this.zNode = ZooKeeperService.ZK_SERVERS + "/" + server.getServerName();
 
+        this.zkService = new ZooKeeperService(zkConnectionString);
         try {
             zkService.createNode(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.EMPTY), true);
         } catch (IOException e) {
             logger.error("Error creating node", e);
         }
 
-        allEcsNodes = ECSHashRing.fromConfig(String
-                .format("%s %s %d", server.getServerName(), server.getHostname(), server.getPort()), ZkECSNode::fromConfig);
+        allEcsNodes = ECSHashRing.fromConfig(String.format("%s %s %d", server.getServerName(), server.getHostname(), server.getPort()), ECSNode::fromConfig);
 
         zkService.watchDataForever(zNode, this::handleRequest);
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
@@ -75,7 +75,8 @@ public class ECSServerConnection {
 
     private void handleMetadataUpdate(byte[] input) {
         logger.info("Handling Metadata Update");
-        allEcsNodes = ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ZkECSNode::fromConfig);
+        allEcsNodes.clear();
+        allEcsNodes.addAll(ECSHashRing.fromConfig(new String(input, StandardCharsets.UTF_8), ECSNode::fromConfig));
     }
 
     /**
@@ -136,36 +137,37 @@ public class ECSServerConnection {
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
-        server.setServerState(State.STOPPED);
-        allEcsNodes = ECSHashRing.fromConfig(req.getValue(), ZkECSNode::fromConfig);
+        server.updateServerState(State.STOPPED);
+        allEcsNodes.clear();
+        allEcsNodes.addAll(ECSHashRing.fromConfig(req.getValue(), ECSNode::fromConfig));
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.INIT_ACK).getBytes());
     }
 
     private void handleStart() throws IOException {
-        server.setServerState(State.STARTED);
+        server.updateServerState(State.STARTED);
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.START_ACK).getBytes());
     }
 
     private void handleStop() throws IOException {
-        server.setServerState(State.STOPPED);
+        server.updateServerState(State.STOPPED);
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.STOP_ACK).getBytes());
     }
 
     private void handleShutdown() throws IOException {
-        server.setServerState(State.STOPPED);
+        server.updateServerState(State.STOPPED);
         server.clearStorage();
         server.close();
         zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
     }
 
     private void handleLock() throws IOException {
-        server.setServerState(State.LOCKED);
+        server.updateServerState(State.LOCKED);
         logger.info("SENDING LOCK ACK");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.LOCK_ACK).getBytes());
     }
 
     private void handleUnlock() throws IOException {
-        server.setServerState(State.UNLOCKED);
+        server.updateServerState(State.UNLOCKED);
         logger.info("SENDING UNLOCK ACK");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
     }
@@ -182,7 +184,7 @@ public class ECSServerConnection {
             transferLatch = new CountDownLatch(1);
             try {
                 beginReceived = transferLatch.await(10000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
+            } catch (NullPointerException | InterruptedException e) {
                 logger.warn("Unable to wait for latch to count down");
             }
 
@@ -214,7 +216,7 @@ public class ECSServerConnection {
             boolean beginReceived = false;
             try {
                 beginReceived = transferLatch.await(10000, TimeUnit.MILLISECONDS);
-            } catch (InterruptedException e) {
+            } catch (NullPointerException | InterruptedException e) {
                 logger.warn("Unable to wait for latch to count down");
             }
 
@@ -252,12 +254,12 @@ public class ECSServerConnection {
                 }
 
                 try (Stream<String> s = server.openKvStream(filter);
-                     PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
+                     PrintWriter out = new PrintWriter(Objects.requireNonNull(socket).getOutputStream(), true)) {
                     logger.info("SENDING DATA");
                     s.forEach(out::println);
                     logger.info("SENDING TRANSFER COMPLETE");
                     zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE).getBytes());
-                } catch (IOException e) {
+                } catch (NullPointerException | IOException e) {
                     logger.error("Error occurred during data transfer", e);
                 }
             }

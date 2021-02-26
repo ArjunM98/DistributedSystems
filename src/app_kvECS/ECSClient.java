@@ -418,7 +418,7 @@ public class ECSClient implements IECSClient {
                 successfulTransfer = false;
                 // remove the server either being added or deleted
                 // leave the original server untouched
-                if(transfer.getTransferType() == TransferType.DESTINATION_ADD) {
+                if (transfer.getTransferType() == TransferType.DESTINATION_ADD) {
                     recoverState(transfer.getDestinationNode());
                 } else {
                     recoverState(transfer.getSourceNode());
