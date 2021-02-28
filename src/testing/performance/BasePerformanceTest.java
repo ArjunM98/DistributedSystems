@@ -5,6 +5,8 @@ import app_kvServer.IKVServer;
 import app_kvServer.storage.IKVStorage.KVPair;
 import client.KVStore;
 import junit.framework.TestCase;
+import logger.LogSetup;
+import org.apache.log4j.Level;
 import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
@@ -25,8 +27,8 @@ public abstract class BasePerformanceTest extends TestCase {
      * ENRON_MAIL_DIR: path to the *UNCOMPRESSED* dataset
      * ENRON_SUBSET_MAILBOX: path to a mailbox within the dataset to use for our tests
      */
-    private static final String ENRON_MAIL_DIR = "D:/enron_mail_20150507",
-            ENRON_SUBSET_MAILBOX = "maildir/dasovich-j/all_documents";
+    private static final String ENRON_MAIL_DIR = "enron_mail_20150507",
+            ENRON_SUBSET_MAILBOX = "dasovich-j/all_documents";
 
     /**
      * NUM_UNIQ_REQS: the number of unique key/value pairs to generate
@@ -35,7 +37,7 @@ public abstract class BasePerformanceTest extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    protected static final int NUM_UNIQ_REQS = 500, REQ_DUPLICITY = 2;
+    protected static final int NUM_UNIQ_REQS = 50, REQ_DUPLICITY = 2;
 
     protected static final int CACHE_SIZE = NUM_UNIQ_REQS / 2;
     protected static final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
@@ -99,10 +101,12 @@ public abstract class BasePerformanceTest extends TestCase {
      */
     @Override
     protected void setUp() throws Exception {
-        ECS = generateNewServers();
+        boolean newEcs = (ECS == null);
+        if (newEcs) ECS = generateNewServers();
         CLIENTS = generateNewClients();
 
-        ECS.addNodes(getNumServers(), CACHE_STRATEGY.toString(), CACHE_SIZE);
+        if (newEcs) ECS.addNodes(getNumServers(), CACHE_STRATEGY.toString(), CACHE_SIZE);
+        if (newEcs) ECS.start();
         for (KVStore kvClient : CLIENTS) kvClient.connect();
     }
 
@@ -112,7 +116,7 @@ public abstract class BasePerformanceTest extends TestCase {
     @Override
     protected void tearDown() {
         for (KVStore kvClient : CLIENTS) kvClient.disconnect();
-        ECS.shutdown();
+//        ECS.shutdown();
     }
 
     protected abstract List<KVStore> generateNewClients();
@@ -140,6 +144,7 @@ public abstract class BasePerformanceTest extends TestCase {
                 final KVMessage res = store.get(key);
                 long finish = System.nanoTime();
                 assertNotSame("GET failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
+                assertNotSame("GET failed: " + res, KVMessage.StatusType.SERVER_STOPPED, res.getStatus());
                 getCount++;
                 getExecTime += (finish - start);
                 getMsgSize += ((KVMessageProto) res).getByteRepresentation().length / 1000;
@@ -150,6 +155,7 @@ public abstract class BasePerformanceTest extends TestCase {
                 final KVMessage res = store.put(key, value);
                 long finish = System.nanoTime();
                 assertNotSame("PUT failed: " + res, KVMessage.StatusType.FAILED, res.getStatus());
+                assertNotSame("PUT failed: " + res, KVMessage.StatusType.SERVER_STOPPED, res.getStatus());
                 putCount++;
                 putExecTime += (finish - start);
                 putMsgSize += ((KVMessageProto) res).getByteRepresentation().length / 1000;
@@ -195,9 +201,9 @@ public abstract class BasePerformanceTest extends TestCase {
                     getNumClients(),
                     getNumServers(),
                     getRequestRatio,
-                    (totalGetsTime / totalGets) / NUM_CLIENTS,
+                    (totalGetsTime / totalGets) / (double) NUM_CLIENTS,
                     totalGetsBandwidth / (totalGetsTime / totalGets),
-                    (totalPutsTime / totalPuts) / NUM_CLIENTS,
+                    (totalPutsTime / totalPuts) / (double) NUM_CLIENTS,
                     totalPutsBandwidth / (totalPutsTime / totalPuts)
             );
         } catch (Exception e) {

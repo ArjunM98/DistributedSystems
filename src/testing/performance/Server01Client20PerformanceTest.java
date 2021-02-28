@@ -15,7 +15,7 @@ public class Server01Client20PerformanceTest extends BasePerformanceTest {
     @Override
     protected List<KVStore> generateNewClients() {
         return IntStream.range(0, getNumClients())
-                .mapToObj(i -> new KVStore("localhost", 50000))
+                .mapToObj(i -> new KVStore("ug132", 50000))
                 .collect(Collectors.toList());
     }
 
@@ -26,10 +26,10 @@ public class Server01Client20PerformanceTest extends BasePerformanceTest {
             final String TEMP_FILE_NAME = "ecs.tmp.config";
             try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
                 Stream.of(
-                        "server1 localhost 50000"
+                        "server1 ug132 50000"
                 ).forEach(writer::println);
-                ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
             }
+            ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
         } catch (Exception e) {
             throw new RuntimeException("Unable to create ECS", e);
         }

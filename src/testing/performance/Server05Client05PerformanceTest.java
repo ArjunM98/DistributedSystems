@@ -11,7 +11,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-public class Server01Client01PerformanceTest extends BasePerformanceTest {
+public class Server05Client05PerformanceTest extends BasePerformanceTest {
     @Override
     protected List<KVStore> generateNewClients() {
         return IntStream.range(0, getNumClients())
@@ -26,7 +26,11 @@ public class Server01Client01PerformanceTest extends BasePerformanceTest {
             final String TEMP_FILE_NAME = "ecs.tmp.config";
             try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
                 Stream.of(
-                        "server1 ug132 50000"
+                        "server1 ug132 50000",
+                        "server2 ug132 50002",
+                        "server3 ug132 50003",
+                        "server4 ug132 50004",
+                        "server5 ug132 50005"
                 ).forEach(writer::println);
             }
             ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
@@ -39,11 +43,11 @@ public class Server01Client01PerformanceTest extends BasePerformanceTest {
 
     @Override
     protected int getNumClients() {
-        return 1;
+        return 5;
     }
 
     @Override
     protected int getNumServers() {
-        return 1;
+        return 5;
     }
 }
