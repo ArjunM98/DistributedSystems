@@ -110,14 +110,14 @@ public class KVSingleFileStorage implements IKVStorage {
             compactTombstones();
 
             // 2. Move over the desired keys into a new file
-            final File tempStorageTransferred = new File(storage.getAbsolutePath() + ".tmp.transfer." + System.currentTimeMillis());
+            final File tempStorageTransferred = new File(storage.getAbsolutePath() + ".tmp.transferred." + System.currentTimeMillis());
             final File tempStorageKept = new File(storage.getAbsolutePath() + ".tmp.kept." + System.currentTimeMillis());
             try (Stream<String> inputLines = Files.lines(storage.toPath());
                  PrintWriter transferred = new PrintWriter(new FileWriter(tempStorageTransferred));
                  PrintWriter kept = new PrintWriter(new FileWriter(tempStorageKept))) {
                 inputLines.map(line -> new KVPair(line.substring(1, line.indexOf(KVPair.KV_DELIMITER)), line.substring(line.indexOf(KVPair.KV_DELIMITER) + 1)))
                         .forEach(kv -> {
-                            if (filter.test(kv)) transferred.println(kv.key + KVPair.KV_DELIMITER + kv.value);
+                            if (filter.test(kv)) transferred.println(kv.serialize());
                             else kept.println(Tombstone.VALID.marker + kv.key + KVPair.KV_DELIMITER + kv.value);
                         });
             }
