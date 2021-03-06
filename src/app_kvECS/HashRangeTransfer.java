@@ -42,29 +42,19 @@ public class HashRangeTransfer {
         return this.transferType;
     }
 
-    public ZkECSNode getLockingNode() {
-        switch (this.transferType) {
-            case SOURCE_REMOVE:
-                return this.getDestinationNode();
-            case DESTINATION_ADD:
-                return this.getSourceNode();
-        }
-        throw new IllegalStateException("Unknown transfer configuration");
-    }
-
     public void execute(ZooKeeperService zk) throws IOException {
         KVAdminMessageProto ack;
 
-        logger.info("SENDING LOCK REQUEST");
+        logger.debug("SENDING LOCK REQUEST");
         // 1. Lock server I'm sending data to
-        ack = getLockingNode().sendMessage(zk, new KVAdminMessageProto(
+        ack = getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
                 KVAdminMessage.AdminStatusType.LOCK
         ), 5000, TimeUnit.MILLISECONDS);
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.LOCK_ACK)
             throw new IOException("Unable to acquire lock");
 
-        logger.info("SENDING TRANSFER REQUEST");
+        logger.debug("SENDING TRANSFER REQUEST");
         // 2. Ask for transfer port available on deleted server
         ack = getDestinationNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -74,7 +64,7 @@ public class HashRangeTransfer {
             throw new IOException("Unable to acquire port information");
         String availablePort = ack.getValue();
 
-        logger.info("SENDING MOVE REQUEST");
+        logger.debug("SENDING MOVE REQUEST");
         // 3. Send port information and range to new server
         ack = getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -85,7 +75,7 @@ public class HashRangeTransfer {
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.MOVE_DATA_ACK)
             throw new IOException("Unable to initiate transfer procedure");
 
-        logger.info("SENDING TRANSFER BEGIN(S)");
+        logger.debug("SENDING TRANSFER BEGIN(S)");
         // 4. Initiate transfer and await progress
         final long timeout = 2;
         final TimeUnit timeUnit = TimeUnit.HOURS;
@@ -100,7 +90,7 @@ public class HashRangeTransfer {
                         return getSourceNode().getNodeName().equals(response.getSender())
                                 && response.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE;
                     } catch (Exception e) {
-                        logger.info("Unable to await source node transfer termination", e);
+                        logger.warn("Unable to await source node transfer termination", e);
                         return false;
                     }
                 }), (() -> {
@@ -112,7 +102,7 @@ public class HashRangeTransfer {
                         return getDestinationNode().getNodeName().equals(response.getSender())
                                 && response.getStatus() == KVAdminMessage.AdminStatusType.TRANSFER_COMPLETE;
                     } catch (Exception e) {
-                        logger.info("Unable to await destination node transfer termination", e);
+                        logger.warn("Unable to await destination node transfer termination", e);
                         return false;
                     }
                 })

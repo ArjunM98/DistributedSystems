@@ -8,6 +8,7 @@ import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
+import shared.Utilities;
 import shared.messages.KVMessage;
 
 import java.io.IOException;
@@ -98,12 +99,7 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public String getHostname() {
-        if (serverSocket == null) try {
-            return InetAddress.getLocalHost().getHostName();
-        } catch (UnknownHostException e) {
-            logger.error("Unknown host: try starting the server first", e);
-        }
-        return serverSocket.getInetAddress().getHostName();
+        return Utilities.getHostname();
     }
 
     @Override
@@ -249,22 +245,31 @@ public class KVServer extends Thread implements IKVServer {
 
     @Override
     public void kill() {
-        this.isRunning.set(false);
-        try {
-            threadPool.shutdownNow();
-            logger.warn(String.format("%d clients were active", activeConnections.size()));
-            activeConnections.forEach(ClientConnection::close);
-        } catch (Exception e) {
-            logger.error("Unable to cleanly terminate threads", e);
-        }
+        if (this.isRunning.get()) {
+            this.isRunning.set(false);
+            try {
+                threadPool.shutdownNow();
+                logger.warn(String.format("%d clients were active", activeConnections.size()));
+                activeConnections.forEach(ClientConnection::close);
+            } catch (Exception e) {
+                logger.error("Unable to cleanly terminate threads", e);
+            }
 
-        try {
-            serverSocket.close();
-        } catch (Exception e) {
-            logger.error("Unable to cleanly terminate socket", e);
-        }
+            try {
+                serverSocket.close();
+            } catch (Exception e) {
+                logger.error("Unable to cleanly terminate socket", e);
+            }
 
-        this.clearCache();
+            try {
+                ecsServerConnection.close();
+            } catch (Exception e) {
+                logger.error("Unable to cleanly terminate ECS connection", e);
+            }
+        } else {
+            logger.info(String.format("Second call: %d", java.lang.Thread.activeCount()));
+            logger.warn("Server already closed");
+        }
     }
 
     @Override
@@ -353,7 +358,7 @@ public class KVServer extends Thread implements IKVServer {
 
         // 2. Initialize logger
         try {
-            new LogSetup("logs/" + name + ".log", logLevel);
+            new LogSetup("logs/" + name + "_" + System.currentTimeMillis() + ".log", logLevel);
         } catch (IOException e) {
             System.err.println("Logger error: " + e);
             System.exit(1);

@@ -6,6 +6,7 @@ import ecs.IECSNode;
 import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
+import shared.Utilities;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
@@ -28,7 +29,7 @@ public class ECSClient implements IECSClient {
     private static final Logger logger = Logger.getRootLogger();
     public static final String ECS_NAME = "ECS";
     public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m2-server.jar").toString();
-    public static final String ZK_CONN = "127.0.0.1:2181";
+    public static final String PUBLIC_ZK_CONN = Utilities.getHostname() + ":2181";
 
     /* Zookeeper Client Instance */
     private final ZooKeeperService zk;
@@ -40,7 +41,7 @@ public class ECSClient implements IECSClient {
     private ECSHashRing<ZkECSNode> newHashRing;
 
     /* ECS Hashring */
-    private ECSHashRing<ZkECSNode> hashRing;
+    private final ECSHashRing<ZkECSNode> hashRing;
 
     /**
      * Initializes ECS Structure
@@ -51,7 +52,7 @@ public class ECSClient implements IECSClient {
      * @param zooKeeperConnectionString - like localhost:2181
      */
     public ECSClient(String filePath, String zooKeeperConnectionString) throws IOException {
-        logger.info("Initializing ECS Server");
+        logger.debug("Initializing ECS Server");
 
         /* Holds original file information passed to ECS on initialization */
         hashRing = new ECSHashRing<>();
@@ -80,7 +81,11 @@ public class ECSClient implements IECSClient {
         // Set up watch on the children of root
         zk.watchChildrenForever(ZooKeeperService.ZK_SERVERS, this::initializeNewServer);
 
-        logger.info("ECS Server Initialized");
+        logger.debug("ECS Server Initialized");
+    }
+
+    public void close() throws IOException {
+        this.zk.close();
     }
 
     /**
@@ -161,7 +166,10 @@ public class ECSClient implements IECSClient {
         }
 
         // Reset state
-        hashRing = newHashRing;
+        synchronized (hashRing) {
+            hashRing.clear();
+            hashRing.addAll(newHashRing);
+        }
         newHashRing = new ECSHashRing<>();
         return successfulTransfer;
     }
@@ -174,23 +182,27 @@ public class ECSClient implements IECSClient {
     @Override
     public boolean stop() {
 
-        if (hashRing.size() == 0) return false;
+        synchronized (hashRing) {
+            if (hashRing.size() == 0) return false;
+        }
 
         boolean stopSuccessful = true;
 
-        // Send stop command
-        for (ZkECSNode server : hashRing.getAllNodes()) {
-            if (server.getNodeStatus() == ServerStatus.RUNNING) {
-                try {
-                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
-                            ECS_NAME,
-                            KVAdminMessage.AdminStatusType.STOP
-                    ), 5000, TimeUnit.MILLISECONDS);
-                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.STOP_ACK) throw new IOException();
-                    server.setNodeStatus(ServerStatus.STOPPED);
-                } catch (IOException e) {
-                    stopSuccessful = false;
-                    logger.warn("Unable to stop all servers");
+        synchronized (hashRing) {
+            // Send stop command
+            for (ZkECSNode server : hashRing.getAllNodes()) {
+                if (server.getNodeStatus() == ServerStatus.RUNNING) {
+                    try {
+                        KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                                ECS_NAME,
+                                KVAdminMessage.AdminStatusType.STOP
+                        ), 5000, TimeUnit.MILLISECONDS);
+                        if (ack.getStatus() != KVAdminMessage.AdminStatusType.STOP_ACK) throw new IOException();
+                        server.setNodeStatus(ServerStatus.STOPPED);
+                    } catch (IOException e) {
+                        stopSuccessful = false;
+                        logger.warn("Unable to stop all servers");
+                    }
                 }
             }
         }
@@ -204,24 +216,29 @@ public class ECSClient implements IECSClient {
      */
     @Override
     public boolean shutdown() {
-        if (hashRing.size() == 0) return true;
+
+        synchronized (hashRing) {
+            if (hashRing.size() == 0) return true;
+        }
 
         boolean successfulShutdown = true;
 
-        // Send shutdown command
-        for (ZkECSNode server : hashRing.getAllNodes()) {
-            try {
-                KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
-                        ECS_NAME,
-                        KVAdminMessage.AdminStatusType.SHUTDOWN
-                ), 5000, TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
-                server.setNodeStatus(ServerStatus.OFFLINE);
-                hashRing.removeServer(server);
-                ECSNodeRepo.add(server);
-            } catch (IOException e) {
-                successfulShutdown = false;
-                logger.warn("Unable to stop all servers");
+        synchronized (hashRing) {
+            // Send shutdown command
+            for (ZkECSNode server : hashRing.getAllNodes()) {
+                try {
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.SHUTDOWN
+                    ), 5000, TimeUnit.MILLISECONDS);
+                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
+                    server.setNodeStatus(ServerStatus.OFFLINE);
+                    hashRing.removeServer(server);
+                    ECSNodeRepo.add(server);
+                } catch (IOException e) {
+                    successfulShutdown = false;
+                    logger.warn("Unable to stop all servers");
+                }
             }
         }
         return successfulShutdown;
@@ -251,8 +268,10 @@ public class ECSClient implements IECSClient {
     @Override
     public Collection<IECSNode> addNodes(int count, String cacheStrategy, int cacheSize) {
 
-        // Initialize new hash ring to hold the position of the new nodes
-        newHashRing = hashRing.deepCopy(ZkECSNode::new);
+        synchronized (hashRing) {
+            // Initialize new hash ring to hold the position of the new nodes
+            newHashRing = hashRing.deepCopy(ZkECSNode::new);
+        }
 
         // Set up nodes
         Collection<IECSNode> nodesToAdd = setupNodes(count, cacheStrategy, cacheSize);
@@ -322,17 +341,17 @@ public class ECSClient implements IECSClient {
                     .map(ZkECSNode::getNodeStatus)
                     .allMatch(status -> status != ServerStatus.INACTIVE);
             if (nodesResponded) {
-                logger.info("All Nodes Responded!");
+                logger.debug("All Nodes Responded!");
                 return true;
             }
             try {
                 Thread.sleep(100 /* Sleep for 0.1 seconds */);
             } catch (InterruptedException e) {
-                logger.info("Interrupted while awaiting nodes");
+                logger.warn("Interrupted while awaiting nodes");
                 break;
             }
         }
-        logger.info("Unable to contact server");
+        logger.debug("Unable to contact server");
         return false;
     }
 
@@ -347,8 +366,10 @@ public class ECSClient implements IECSClient {
 
         boolean successfulStop = true;
 
-        // make a new hash ring copy
-        newHashRing = hashRing.deepCopy(ZkECSNode::new);
+        synchronized (hashRing) {
+            // make a new hash ring copy
+            newHashRing = hashRing.deepCopy(ZkECSNode::new);
+        }
 
         // Go around ring and mark prospective clients as stopping
         for (String name : nodeNames) {
@@ -388,7 +409,11 @@ public class ECSClient implements IECSClient {
             logger.warn("Unable to update metadata", e);
         }
 
-        hashRing = newHashRing;
+        // Reset state
+        synchronized (hashRing) {
+            hashRing.clear();
+            hashRing.addAll(newHashRing);
+        }
         newHashRing = new ECSHashRing<>();
 
         return successfulStop;
@@ -396,12 +421,16 @@ public class ECSClient implements IECSClient {
 
     @Override
     public Map<String, IECSNode> getNodes() {
-        return hashRing.getAllNodes().stream().collect(Collectors.toMap(IECSNode::getNodeName, Function.identity()));
+        synchronized (hashRing) {
+            return hashRing.getAllNodes().stream().collect(Collectors.toMap(IECSNode::getNodeName, Function.identity()));
+        }
     }
 
     @Override
     public IECSNode getNodeByKey(String Key) {
-        return hashRing.getServer(Key);
+        synchronized (hashRing) {
+            return hashRing.getServer(Key);
+        }
     }
 
     /**
@@ -476,8 +505,14 @@ public class ECSClient implements IECSClient {
      */
     public void initializeNewServer(List<String> children) {
 
+        synchronized (hashRing) {
+            if (children.size() <= hashRing.size()) {
+                return;
+            }
+        }
+
         // Only handle cases when a there is a potential new server
-        if (children.size() > hashRing.size() && newHashRing.size() != 0) {
+        if (newHashRing.size() != 0) {
 
             Set<String> newChildren = children.stream()
                     .map(name -> name.substring(name.lastIndexOf("/") + 1))
@@ -522,18 +557,26 @@ public class ECSClient implements IECSClient {
 
         logger.info("Node faliure triggered");
         // Check whether the node is currently active:
-        ECSNode serverFailed = hashRing.getNodeByName(node.getNodeName());
+        ECSNode serverFailed;
+        synchronized (hashRing) {
+            serverFailed = hashRing.getNodeByName(node.getNodeName());
+        }
+
         if (serverFailed != null) {
             logger.info((serverFailed.getNodeName()));
             // need to recover from an active server failure
             node.setNodeStatus(ServerStatus.OFFLINE);
             // remove from the node pool
-            hashRing.removeServer(node);
+            synchronized (hashRing) {
+                hashRing.removeServer(node);
+            }
             // add to queue
             ECSNodeRepo.add(node);
             // send metadata update to everyone
             try {
-                zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
+                synchronized (hashRing) {
+                    zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
+                }
             } catch (IOException e) {
                 logger.error("Unable to send metadata", e);
             }
@@ -554,7 +597,9 @@ public class ECSClient implements IECSClient {
         // Set the state to offline
         node.setNodeStatus(ServerStatus.OFFLINE);
         // Remove the node from the current new configuration
-        newHashRing.removeServer(node);
+        synchronized (hashRing) {
+            newHashRing.removeServer(node);
+        }
         // Add the server back to the original repository
         ECSNodeRepo.add(node);
     }
@@ -568,7 +613,7 @@ public class ECSClient implements IECSClient {
                 SERVER_JAR,
                 String.valueOf(nodeData.getNodePort()),
                 nodeData.getNodeName(),
-                ZK_CONN,
+                PUBLIC_ZK_CONN,
                 String.valueOf(cacheSize),
                 cacheStrategy);
         script = "ssh -n " + nodeData.getNodeHost() + " nohup " + script + " > server.log &";
