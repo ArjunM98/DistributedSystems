@@ -20,13 +20,15 @@ public class PerformanceTests extends TestCase {
 
     public static Test suite() {
         TestSuite clientSuite = new TestSuite("Basic Storage Server PERFORMANCE Test-Suite");
-        //clientSuite.addTestSuite(Server01Client01PerformanceTest.class);
-        //clientSuite.addTestSuite(Server01Client05PerformanceTest.class);
-        //clientSuite.addTestSuite(Server01Client20PerformanceTest.class);
-        //clientSuite.addTestSuite(Server05Client01PerformanceTest.class);
-        //clientSuite.addTestSuite(Server05Client05PerformanceTest.class);
-        //clientSuite.addTestSuite(Server05Client20PerformanceTest.class);
+        clientSuite.addTestSuite(Server01Client01PerformanceTest.class);
+        clientSuite.addTestSuite(Server01Client05PerformanceTest.class);
+        clientSuite.addTestSuite(Server01Client20PerformanceTest.class);
+        clientSuite.addTestSuite(Server05Client01PerformanceTest.class);
+        clientSuite.addTestSuite(Server05Client05PerformanceTest.class);
+        clientSuite.addTestSuite(Server05Client20PerformanceTest.class);
+        clientSuite.addTestSuite(Server10Client01PerformanceTest.class);
         clientSuite.addTestSuite(Server10Client05PerformanceTest.class);
+        clientSuite.addTestSuite(Server10Client20PerformanceTest.class);
         return clientSuite;
     }
 }

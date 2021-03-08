@@ -7,11 +7,12 @@ import client.KVStore;
 import junit.framework.TestCase;
 import logger.LogSetup;
 import org.apache.log4j.Level;
-import org.junit.Test;
+import org.junit.*;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.Callable;
@@ -37,7 +38,7 @@ public abstract class BasePerformanceTest extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    protected static final int NUM_UNIQ_REQS = 50, REQ_DUPLICITY = 2;
+    protected static final int NUM_UNIQ_REQS = 100, REQ_DUPLICITY = 2;
 
     protected static final int CACHE_SIZE = NUM_UNIQ_REQS / 2;
     protected static final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
@@ -99,24 +100,33 @@ public abstract class BasePerformanceTest extends TestCase {
     /**
      * Per-test setup
      */
-    @Override
-    protected void setUp() throws Exception {
-        boolean newEcs = (ECS == null);
-        if (newEcs) ECS = generateNewServers();
+    @Before
+    public void setUp() throws Exception {
+        ECS = generateNewServers();
         CLIENTS = generateNewClients();
 
-        if (newEcs) ECS.addNodes(getNumServers(), CACHE_STRATEGY.toString(), CACHE_SIZE);
-        if (newEcs) ECS.start();
+        ECS.addNodes(getNumServers(), CACHE_STRATEGY.toString(), CACHE_SIZE);
+        boolean started = ECS.start();
+        if (!started) {
+            throw new Exception("Unable to start all specified servers");
+        }
         for (KVStore kvClient : CLIENTS) kvClient.connect();
     }
 
     /**
      * Per-test teardown
      */
-    @Override
-    protected void tearDown() {
+    @After
+    public void tearDown() throws IOException {
         for (KVStore kvClient : CLIENTS) kvClient.disconnect();
-//        ECS.shutdown();
+        ECS.shutdown();
+        // Shutdown is ack-ed right away, but needs some time to complete
+        try {
+            Thread.sleep(500);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        ECS.close();
     }
 
     protected abstract List<KVStore> generateNewClients();

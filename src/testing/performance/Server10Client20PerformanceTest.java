@@ -27,21 +27,22 @@ public class Server10Client20PerformanceTest extends BasePerformanceTest {
             try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
                 Stream.of(
                         "server1 ug132 50000",
-                        "server2 ug132 50002",
-                        "server3 ug132 50003",
-                        "server4 ug132 50004",
-                        "server5 ug132 50005",
-                        "server6 ug132 50006",
-                        "server7 ug132 50007",
-                        "server8 ug132 50008",
-                        "server9 ug132 50009",
-                        "server10 ug132 50010"
+                        "server2 ug133 50000",
+                        "server3 ug134 50000",
+                        "server4 ug135 50000",
+                        "server5 ug136 50000",
+                        "server6 ug137 50000",
+                        "server7 ug138 50000",
+                        "server8 ug139 50000",
+                        "server9 ug140 50000",
+                        "server10 ug141 50000"
                 ).forEach(writer::println);
             }
             ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
         } catch (Exception e) {
             throw new RuntimeException("Unable to create ECS", e);
         }
+
         return ecsClient;
     }
 

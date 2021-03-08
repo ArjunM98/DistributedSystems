@@ -27,10 +27,10 @@ public class Server05Client01PerformanceTest extends BasePerformanceTest {
             try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
                 Stream.of(
                         "server1 ug132 50000",
-                        "server2 ug132 50002",
-                        "server3 ug132 50003",
-                        "server4 ug132 50004",
-                        "server5 ug132 50005"
+                        "server2 ug133 50000",
+                        "server3 ug134 50000",
+                        "server4 ug135 50000",
+                        "server5 ug136 50000"
                 ).forEach(writer::println);
             }
             ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
