@@ -43,6 +43,9 @@ public class ECSClient implements IECSClient {
     /* ECS Hashring */
     private final ECSHashRing<ZkECSNode> hashRing;
 
+    /* Removal/Shutdown in process */
+    private boolean removalProcess = false;
+
     /**
      * Initializes ECS Structure
      * 1. Initializes ECS Node Repository - All Servers
@@ -222,6 +225,7 @@ public class ECSClient implements IECSClient {
         }
 
         boolean successfulShutdown = true;
+        removalProcess = true;
 
         synchronized (hashRing) {
             // Send shutdown command
@@ -241,6 +245,8 @@ public class ECSClient implements IECSClient {
                 }
             }
         }
+
+        removalProcess = false;
         return successfulShutdown;
     }
 
@@ -293,14 +299,21 @@ public class ECSClient implements IECSClient {
         }
 
         // wait for response on the newly added nodes
-        boolean responseReceived = false;
         try {
-            responseReceived = awaitNodes(count, 10000 /* 10 second timeout limit */);
+            boolean responseReceived = awaitNodes(count, 15000 /* 15 second timeout limit */);
+            if (!responseReceived) throw new Exception();
         } catch (Exception e) {
-            logger.error("Unable to receive connection update", e);
+            logger.warn("Unable to receive connection update", e);
+            // reverse setup stage
+            nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
+                node.setNodeStatus(ServerStatus.INACTIVE);
+                ECSNodeRepo.add(node);
+            });
+            nodesToAdd = null;
+            newHashRing = new ECSHashRing<>();
         }
 
-        return responseReceived ? nodesToAdd : null;
+        return nodesToAdd;
     }
 
     /**
@@ -382,6 +395,8 @@ public class ECSClient implements IECSClient {
         boolean transferExecution = executeTransfers(transferList);
         successfulStop = successfulStop && transferExecution;
 
+        removalProcess = true;
+
         // shutdown respective servers
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STOPPING) {
@@ -401,6 +416,8 @@ public class ECSClient implements IECSClient {
                 }
             }
         }
+
+        removalProcess = false;
 
         // Update data
         try {
@@ -555,7 +572,10 @@ public class ECSClient implements IECSClient {
      */
     public void handleNodeFailure(ZkECSNode node) {
 
-        logger.info("Node faliure triggered");
+        logger.debug("Node failure triggered");
+
+        if (removalProcess) return;
+
         // Check whether the node is currently active:
         ECSNode serverFailed;
         synchronized (hashRing) {
@@ -578,7 +598,7 @@ public class ECSClient implements IECSClient {
                     zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
                 }
             } catch (IOException e) {
-                logger.error("Unable to send metadata", e);
+                logger.error(String.format("Unable to send metadata. Due to server failure from: %s", serverFailed.getNodeName()), e);
             }
         } else {
             // need to recover from a starting/stopping server failure
