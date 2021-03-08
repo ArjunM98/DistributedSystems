@@ -491,37 +491,36 @@ public class ECSClient implements IECSClient {
      */
     public void initializeNewServer(List<String> children) {
 
+        // There was a deletion and that does not concern this function
         synchronized (hashRing) {
-            if (children.size() <= hashRing.size()) {
-                return;
-            }
-        }
+            if (children.size() <= hashRing.size()) return;
 
-        // Only handle cases when a there is a potential new server
-        if (newHashRing.size() != 0) {
+            // Only handle cases when a there is a potential new server
+            if (newHashRing.size() != 0) {
 
-            Set<String> newChildren = children.stream()
-                    .map(name -> name.substring(name.lastIndexOf("/") + 1))
-                    .collect(Collectors.toCollection(HashSet::new));
+                Set<String> newChildren = children.stream()
+                        .map(name -> name.substring(name.lastIndexOf("/") + 1))
+                        .collect(Collectors.toCollection(HashSet::new));
 
-            // For each new child:
-            // 1. Set a watch to handle node failures
-            // 2. Establish connection to receive incoming communication
-            for (String serverName : newChildren) {
-                ZkECSNode newServerConnected = newHashRing.getNodeByName(serverName);
+                // For each new child:
+                // 1. Set a watch to handle node failures
+                // 2. Establish connection to receive incoming communication
+                for (String serverName : newChildren) {
+                    ZkECSNode newServerConnected = newHashRing.getNodeByName(serverName);
 
-                // New child has not been processed yet
-                if (newServerConnected != null && newServerConnected.getNodeStatus() == ServerStatus.INACTIVE) {
+                    // New child has not been processed yet
+                    if (newServerConnected != null && newServerConnected.getNodeStatus() == ServerStatus.INACTIVE) {
 
-                    // Update state of server in newHashRing
-                    newServerConnected.setNodeStatus(ServerStatus.STARTING);
+                        // Update state of server in newHashRing
+                        newServerConnected.setNodeStatus(ServerStatus.STARTING);
 
-                    // Establish watch on new znode
-                    try {
-                        newServerConnected.registerOnDeletionListener(zk, () -> handleNodeFailure(newServerConnected));
-                    } catch (IOException e) {
-                        logger.warn("Unable to set data watch on new znode created by user");
-                        e.printStackTrace();
+                        // Establish watch on new znode
+                        try {
+                            newServerConnected.registerOnDeletionListener(zk, () -> handleNodeFailure(newServerConnected));
+                        } catch (IOException e) {
+                            logger.warn("Unable to set data watch on new znode created by user");
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
