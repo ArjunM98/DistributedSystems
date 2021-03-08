@@ -45,6 +45,15 @@ public class ZooKeeperService {
         logger.info("Connection Established to Zookeeper Ensemble");
     }
 
+    public void close() throws IOException {
+        try {
+            zooKeeper.close();
+            THREAD_POOL.shutdownNow();
+        } catch (InterruptedException e) {
+            throw new IOException("Unable to close ZooKeeper connection");
+        }
+    }
+
     /**
      * Creates a new znode
      *

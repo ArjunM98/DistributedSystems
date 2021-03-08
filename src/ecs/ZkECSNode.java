@@ -94,7 +94,6 @@ public class ZkECSNode extends ECSNode {
         KVAdminMessageProto original;
         try {
             original = new KVAdminMessageProto(originalBytes);
-            logger.info(String.format("%s %s", original.getSender(), original.getStatus()));
             if (!original.getSender().equals(request.getSender())) return original;
         } catch (IOException e) {
             logger.warn("Unable to read response", e);
@@ -103,13 +102,11 @@ public class ZkECSNode extends ECSNode {
         // 2.b) Wait for the response
         boolean resRecv = false;
         try {
-            logger.info("waiting");
             resRecv = latch.await(timeout, timeUnit);
         } catch (InterruptedException e) {
             logger.warn("Unable to wait for latch to count down");
         }
 
-        logger.info("Got a response!");
         // 3. Extract response
         KVAdminMessageProto res = null;
         try {
@@ -118,7 +115,6 @@ public class ZkECSNode extends ECSNode {
             logger.warn("Unable to read response", e);
         }
 
-        logger.info("Returning a response!");
         // 4. Return response
         if (res == null || !resRecv) throw new IOException("Did not receive a response");
         return res;

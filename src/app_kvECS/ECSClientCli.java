@@ -10,10 +10,7 @@ import shared.ObjectFactory;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -23,7 +20,7 @@ import java.util.stream.Collectors;
 public class ECSClientCli implements Runnable {
     private static final Logger logger = Logger.getRootLogger();
     private static final String PROMPT = "ECSClient> ";
-    private final IECSClient ecs;
+    private final ECSClient ecs;
 
     /**
      * A glorified main function for {@link ECSClient}
@@ -32,7 +29,7 @@ public class ECSClientCli implements Runnable {
      */
     public ECSClientCli(String[] args) {
         String ecsConfigPath, zkConnectionString = ZooKeeperService.LOCALHOST_CONNSTR;
-        Level logLevel = Level.ALL;
+        Level logLevel = Level.INFO;
 
         // 1. Validate args
         try {
@@ -66,7 +63,16 @@ public class ECSClientCli implements Runnable {
             throw new RuntimeException(e);
         }
 
-        this.ecs = ObjectFactory.createECSClientObject(ecsConfigPath, zkConnectionString);
+        this.ecs = (ECSClient) ObjectFactory.createECSClientObject(ecsConfigPath, zkConnectionString);
+    }
+
+    private void close() {
+        this.handleShutdown(Collections.emptyList());
+        try {
+            ecs.close();
+        } catch (IOException e) {
+            logger.error("Unable to shutdown ecs connections", e);
+        }
     }
 
     private void handleStart(List<String> args) {
@@ -91,12 +97,14 @@ public class ECSClientCli implements Runnable {
 
     private void handleShutdown(List<String> args) {
         try {
-            if (!ecs.shutdown()) throw new Exception();
+            if (!ecs.shutdown()) {
+                System.out.println("Application might not have cleanly terminated");
+            } else {
+                System.out.println("All running servers have been shutdown");
+            }
         } catch (Exception e) {
-            System.out.println("Unable to shutdown all servers, please try again");
-            return;
+            System.out.println("Unable to shutdown ECS");
         }
-        System.out.println("All running servers have been shutdown");
     }
 
     private void handleAddNode(List<String> args) {
@@ -125,7 +133,7 @@ public class ECSClientCli implements Runnable {
             return;
         }
         Collection<IECSNode> nodesAdded = ecs.addNodes(num, args.get(1), cacheSize);
-        if (nodesAdded.size() <= 0) {
+        if (nodesAdded == null) {
             System.out.println("Unable to add new node(s) to the service");
         } else {
             for (IECSNode node : nodesAdded) {
@@ -286,6 +294,10 @@ public class ECSClientCli implements Runnable {
 
     @Override
     public void run() {
+        // 1. Set shutdown hook
+        Runtime.getRuntime().addShutdownHook(new Thread(ECSClientCli.this::close));
+
+        // 2. Register commands
         Command.addNodes.setCallback(this::handleAddNodes);
         Command.addNode.setCallback(this::handleAddNode);
         Command.shutdown.setCallback(this::handleShutdown);

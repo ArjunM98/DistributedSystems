@@ -65,6 +65,10 @@ public class ECSServerConnection {
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
     }
 
+    public void close() throws IOException {
+        this.zkService.close();
+    }
+
     public String getMetadata() {
         return this.allEcsNodes.toConfig();
     }
@@ -154,21 +158,19 @@ public class ECSServerConnection {
     }
 
     private void handleShutdown() throws IOException {
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
         server.updateServerState(State.STOPPED);
         server.clearStorage();
         server.close();
-        zkService.setData(zNode, new KVAdminMessageProto(server.getName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
     }
 
     private void handleLock() throws IOException {
         server.updateServerState(State.LOCKED);
-        logger.info("SENDING LOCK ACK");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.LOCK_ACK).getBytes());
     }
 
     private void handleUnlock() throws IOException {
         server.updateServerState(State.UNLOCKED);
-        logger.info("SENDING UNLOCK ACK");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
     }
 
@@ -176,9 +178,7 @@ public class ECSServerConnection {
         ServerSocket socket = new ServerSocket(0);
 
         int portNum = socket.getLocalPort();
-        logger.info("HANDLING TRANSFER");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK, Integer.toString(portNum)).getBytes());
-        logger.info("SENT TRANSFER ACK BACK");
         Executors.newCachedThreadPool().execute(() -> {
             boolean beginReceived = false;
             transferLatch = new CountDownLatch(1);

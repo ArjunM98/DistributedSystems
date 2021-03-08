@@ -6,6 +6,7 @@ import ecs.IECSNode;
 import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
 import org.apache.log4j.Logger;
+import shared.Utilities;
 import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
@@ -28,7 +29,7 @@ public class ECSClient implements IECSClient {
     private static final Logger logger = Logger.getRootLogger();
     public static final String ECS_NAME = "ECS";
     public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m2-server.jar").toString();
-    public static final String ZK_CONN = "127.0.0.1:2181";
+    public static final String PUBLIC_ZK_CONN = Utilities.getHostname() + ":2181";
 
     /* Zookeeper Client Instance */
     private final ZooKeeperService zk;
@@ -40,7 +41,7 @@ public class ECSClient implements IECSClient {
     private ECSHashRing<ZkECSNode> newHashRing;
 
     /* ECS Hashring */
-    private ECSHashRing<ZkECSNode> hashRing;
+    private final ECSHashRing<ZkECSNode> hashRing;
 
     /**
      * Initializes ECS Structure
@@ -51,7 +52,7 @@ public class ECSClient implements IECSClient {
      * @param zooKeeperConnectionString - like localhost:2181
      */
     public ECSClient(String filePath, String zooKeeperConnectionString) throws IOException {
-        logger.info("Initializing ECS Server");
+        logger.debug("Initializing ECS Server");
 
         /* Holds original file information passed to ECS on initialization */
         hashRing = new ECSHashRing<>();
@@ -80,7 +81,11 @@ public class ECSClient implements IECSClient {
         // Set up watch on the children of root
         zk.watchChildrenForever(ZooKeeperService.ZK_SERVERS, this::initializeNewServer);
 
-        logger.info("ECS Server Initialized");
+        logger.debug("ECS Server Initialized");
+    }
+
+    public synchronized void close() throws IOException {
+        this.zk.close();
     }
 
     /**
@@ -90,7 +95,7 @@ public class ECSClient implements IECSClient {
      * @throws Exception some meaningful exception on failure
      */
     @Override
-    public boolean start() throws Exception {
+    public synchronized boolean start() throws Exception {
 
         // No servers queued up for start
         if (newHashRing.size() == 0) throw new IllegalStateException("No server queued up for start");
@@ -161,7 +166,8 @@ public class ECSClient implements IECSClient {
         }
 
         // Reset state
-        hashRing = newHashRing;
+        hashRing.clear();
+        hashRing.addAll(newHashRing);
         newHashRing = new ECSHashRing<>();
         return successfulTransfer;
     }
@@ -172,10 +178,9 @@ public class ECSClient implements IECSClient {
      * @return true when startup was successful else false
      */
     @Override
-    public boolean stop() {
+    public synchronized boolean stop() {
 
         if (hashRing.size() == 0) return false;
-
         boolean stopSuccessful = true;
 
         // Send stop command
@@ -203,7 +208,8 @@ public class ECSClient implements IECSClient {
      * @return true when shutdown was successful else false
      */
     @Override
-    public boolean shutdown() {
+    public synchronized boolean shutdown() {
+
         if (hashRing.size() == 0) return true;
 
         boolean successfulShutdown = true;
@@ -233,7 +239,7 @@ public class ECSClient implements IECSClient {
      * @return name of new server
      */
     @Override
-    public IECSNode addNode(String cacheStrategy, int cacheSize) {
+    public synchronized IECSNode addNode(String cacheStrategy, int cacheSize) {
         Collection<IECSNode> addedNodes = addNodes(1 /* Number of Nodes to Add */,
                 cacheStrategy,
                 cacheSize);
@@ -249,7 +255,7 @@ public class ECSClient implements IECSClient {
      * @return set of strings containing the names of the nodes
      */
     @Override
-    public Collection<IECSNode> addNodes(int count, String cacheStrategy, int cacheSize) {
+    public synchronized Collection<IECSNode> addNodes(int count, String cacheStrategy, int cacheSize) {
 
         // Initialize new hash ring to hold the position of the new nodes
         newHashRing = hashRing.deepCopy(ZkECSNode::new);
@@ -274,14 +280,21 @@ public class ECSClient implements IECSClient {
         }
 
         // wait for response on the newly added nodes
-        boolean responseReceived = false;
         try {
-            responseReceived = awaitNodes(count, 10000 /* 10 second timeout limit */);
+            boolean responseReceived = awaitNodes(count, 15000 /* 15 second timeout limit */);
+            if (!responseReceived) throw new Exception();
         } catch (Exception e) {
-            logger.error("Unable to receive connection update", e);
+            logger.warn("Unable to receive connection update", e);
+            // reverse setup stage
+            nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
+                node.setNodeStatus(ServerStatus.INACTIVE);
+                ECSNodeRepo.add(node);
+            });
+            nodesToAdd = null;
+            newHashRing = new ECSHashRing<>();
         }
 
-        return responseReceived ? nodesToAdd : null;
+        return nodesToAdd;
     }
 
     /**
@@ -290,7 +303,7 @@ public class ECSClient implements IECSClient {
      * @return array of strings, containing unique names of servers
      */
     @Override
-    public Collection<IECSNode> setupNodes(int count, String cacheStrategy, int cacheSize) {
+    public synchronized Collection<IECSNode> setupNodes(int count, String cacheStrategy, int cacheSize) {
         Collection<IECSNode> nodesToAdd = new ArrayList<>();
 
         for (int numAdded = 0; numAdded < count && !ECSNodeRepo.isEmpty(); numAdded++) {
@@ -315,24 +328,24 @@ public class ECSClient implements IECSClient {
      * @return - returns true on successfully hearing back from count servers
      */
     @Override
-    public boolean awaitNodes(int count, int timeout) {
+    public synchronized boolean awaitNodes(int count, int timeout) {
         long start = System.currentTimeMillis();
         while (System.currentTimeMillis() - start < (long) timeout) {
             boolean nodesResponded = newHashRing.getAllNodes().stream()
                     .map(ZkECSNode::getNodeStatus)
                     .allMatch(status -> status != ServerStatus.INACTIVE);
             if (nodesResponded) {
-                logger.info("All Nodes Responded!");
+                logger.debug("All Nodes Responded!");
                 return true;
             }
             try {
                 Thread.sleep(100 /* Sleep for 0.1 seconds */);
             } catch (InterruptedException e) {
-                logger.info("Interrupted while awaiting nodes");
+                logger.warn("Interrupted while awaiting nodes");
                 break;
             }
         }
-        logger.info("Unable to contact server");
+        logger.debug("Unable to contact server");
         return false;
     }
 
@@ -343,7 +356,7 @@ public class ECSClient implements IECSClient {
      * @return true when removal of nodeNames was successful else false
      */
     @Override
-    public boolean removeNodes(Collection<String> nodeNames) {
+    public synchronized boolean removeNodes(Collection<String> nodeNames) {
 
         boolean successfulStop = true;
 
@@ -388,19 +401,21 @@ public class ECSClient implements IECSClient {
             logger.warn("Unable to update metadata", e);
         }
 
-        hashRing = newHashRing;
+        // Reset state
+        hashRing.clear();
+        hashRing.addAll(newHashRing);
         newHashRing = new ECSHashRing<>();
 
         return successfulStop;
     }
 
     @Override
-    public Map<String, IECSNode> getNodes() {
+    public synchronized Map<String, IECSNode> getNodes() {
         return hashRing.getAllNodes().stream().collect(Collectors.toMap(IECSNode::getNodeName, Function.identity()));
     }
 
     @Override
-    public IECSNode getNodeByKey(String Key) {
+    public synchronized IECSNode getNodeByKey(String Key) {
         return hashRing.getServer(Key);
     }
 
@@ -409,7 +424,7 @@ public class ECSClient implements IECSClient {
      *
      * @param transferList - Object representing transfer information between two servers
      */
-    private boolean executeTransfers(List<HashRangeTransfer> transferList) {
+    private synchronized boolean executeTransfers(List<HashRangeTransfer> transferList) {
         boolean successfulTransfer = true;
         for (HashRangeTransfer transfer : transferList) {
             try {
@@ -436,7 +451,7 @@ public class ECSClient implements IECSClient {
      * 2. If the node is in state ServerStatus.STOPPING:
      * - Look ahead in HashRing for a currently ServerStatus.RUNNING to give data to
      */
-    private List<HashRangeTransfer> calculateNodeTransfers() {
+    private synchronized List<HashRangeTransfer> calculateNodeTransfers() {
 
         List<ZkECSNode> changedServerState = newHashRing.getAllNodes();
         List<HashRangeTransfer> transferList = new ArrayList<>();
@@ -457,7 +472,7 @@ public class ECSClient implements IECSClient {
      *
      * @param node - get the next valid running node from the current position
      */
-    private ZkECSNode getNextValidNode(ZkECSNode node) {
+    private synchronized ZkECSNode getNextValidNode(ZkECSNode node) {
 
         ZkECSNode nextNode = node;
         for (int pos = 0; pos < newHashRing.size(); pos++) {
@@ -476,33 +491,36 @@ public class ECSClient implements IECSClient {
      */
     public void initializeNewServer(List<String> children) {
 
-        // Only handle cases when a there is a potential new server
-        if (children.size() > hashRing.size() && newHashRing.size() != 0) {
+        // There was a deletion and that does not concern this function
+        synchronized (hashRing) {
+            if (children.size() <= hashRing.size()) return;
 
-            Set<String> newChildren = children.stream()
-                    .map(name -> name.substring(name.lastIndexOf("/") + 1))
-                    .collect(Collectors.toCollection(HashSet::new));
+            // Only handle cases when a there is a potential new server
+            if (newHashRing.size() != 0) {
 
-            // For each new child:
-            // 1. Set a watch to handle node failures
-            // 2. Establish connection to receive incoming communication
-            for (String serverName : newChildren) {
-                ZkECSNode newServerConnected = newHashRing.getNodeByName(serverName);
+                Set<String> newChildren = children.stream()
+                        .map(name -> name.substring(name.lastIndexOf("/") + 1))
+                        .collect(Collectors.toCollection(HashSet::new));
 
-                // New child has not been processed yet
-                if (newServerConnected != null && newServerConnected.getNodeStatus() == ServerStatus.INACTIVE) {
+                // For each new child:
+                // 1. Set a watch to handle node failures
+                // 2. Establish connection to receive incoming communication
+                for (String serverName : newChildren) {
+                    ZkECSNode newServerConnected = newHashRing.getNodeByName(serverName);
 
-                    // Update state of server in newHashRing
-                    newHashRing.removeServer(newServerConnected);
-                    newServerConnected.setNodeStatus(ServerStatus.STARTING);
-                    newHashRing.addServer(newServerConnected);
+                    // New child has not been processed yet
+                    if (newServerConnected != null && newServerConnected.getNodeStatus() == ServerStatus.INACTIVE) {
 
-                    // Establish watch on new znode
-                    try {
-                        newServerConnected.registerOnDeletionListener(zk, () -> handleNodeFailure(newServerConnected));
-                    } catch (IOException e) {
-                        logger.warn("Unable to set data watch on new znode created by user");
-                        e.printStackTrace();
+                        // Update state of server in newHashRing
+                        newServerConnected.setNodeStatus(ServerStatus.STARTING);
+
+                        // Establish watch on new znode
+                        try {
+                            newServerConnected.registerOnDeletionListener(zk, () -> handleNodeFailure(newServerConnected));
+                        } catch (IOException e) {
+                            logger.warn("Unable to set data watch on new znode created by user");
+                            e.printStackTrace();
+                        }
                     }
                 }
             }
@@ -518,11 +536,14 @@ public class ECSClient implements IECSClient {
      *
      * @param node - the following node has lost connection to ZK
      */
-    public void handleNodeFailure(ZkECSNode node) {
+    public synchronized void handleNodeFailure(ZkECSNode node) {
 
-        logger.info("Node faliure triggered");
+        logger.debug("Node failure triggered");
+
         // Check whether the node is currently active:
-        ECSNode serverFailed = hashRing.getNodeByName(node.getNodeName());
+        ECSNode serverFailed;
+        serverFailed = hashRing.getNodeByName(node.getNodeName());
+
         if (serverFailed != null) {
             logger.info((serverFailed.getNodeName()));
             // need to recover from an active server failure
@@ -535,7 +556,7 @@ public class ECSClient implements IECSClient {
             try {
                 zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
             } catch (IOException e) {
-                logger.error("Unable to send metadata", e);
+                logger.error(String.format("Unable to send metadata. Due to server failure from: %s", serverFailed.getNodeName()), e);
             }
         } else {
             // need to recover from a starting/stopping server failure
@@ -548,7 +569,7 @@ public class ECSClient implements IECSClient {
      *
      * @param node - failed node response
      */
-    private void recoverState(ZkECSNode node) {
+    private synchronized void recoverState(ZkECSNode node) {
         if (newHashRing.size() == 0) throw new IllegalStateException("No server queued up for start");
 
         // Set the state to offline
@@ -562,13 +583,13 @@ public class ECSClient implements IECSClient {
     /**
      * Invokes a remote ssh process to start server at specified host & port
      */
-    private void invokeKVServerProcess(IECSNode nodeData, String cacheStrategy, int cacheSize) throws IOException {
+    private synchronized void invokeKVServerProcess(IECSNode nodeData, String cacheStrategy, int cacheSize) throws IOException {
         String script = String.join(" ",
                 "java -jar",
                 SERVER_JAR,
                 String.valueOf(nodeData.getNodePort()),
                 nodeData.getNodeName(),
-                ZK_CONN,
+                PUBLIC_ZK_CONN,
                 String.valueOf(cacheSize),
                 cacheStrategy);
         script = "ssh -n " + nodeData.getNodeHost() + " nohup " + script + " > server.log &";
