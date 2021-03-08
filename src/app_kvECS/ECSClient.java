@@ -43,9 +43,6 @@ public class ECSClient implements IECSClient {
     /* ECS Hashring */
     private final ECSHashRing<ZkECSNode> hashRing;
 
-    /* Removal/Shutdown in process */
-    private boolean removalProcess = false;
-
     /**
      * Initializes ECS Structure
      * 1. Initializes ECS Node Repository - All Servers
@@ -87,7 +84,7 @@ public class ECSClient implements IECSClient {
         logger.debug("ECS Server Initialized");
     }
 
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
         this.zk.close();
     }
 
@@ -98,7 +95,7 @@ public class ECSClient implements IECSClient {
      * @throws Exception some meaningful exception on failure
      */
     @Override
-    public boolean start() throws Exception {
+    public synchronized boolean start() throws Exception {
 
         // No servers queued up for start
         if (newHashRing.size() == 0) throw new IllegalStateException("No server queued up for start");
@@ -169,10 +166,8 @@ public class ECSClient implements IECSClient {
         }
 
         // Reset state
-        synchronized (hashRing) {
-            hashRing.clear();
-            hashRing.addAll(newHashRing);
-        }
+        hashRing.clear();
+        hashRing.addAll(newHashRing);
         newHashRing = new ECSHashRing<>();
         return successfulTransfer;
     }
@@ -183,29 +178,24 @@ public class ECSClient implements IECSClient {
      * @return true when startup was successful else false
      */
     @Override
-    public boolean stop() {
+    public synchronized boolean stop() {
 
-        synchronized (hashRing) {
-            if (hashRing.size() == 0) return false;
-        }
-
+        if (hashRing.size() == 0) return false;
         boolean stopSuccessful = true;
 
-        synchronized (hashRing) {
-            // Send stop command
-            for (ZkECSNode server : hashRing.getAllNodes()) {
-                if (server.getNodeStatus() == ServerStatus.RUNNING) {
-                    try {
-                        KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
-                                ECS_NAME,
-                                KVAdminMessage.AdminStatusType.STOP
-                        ), 5000, TimeUnit.MILLISECONDS);
-                        if (ack.getStatus() != KVAdminMessage.AdminStatusType.STOP_ACK) throw new IOException();
-                        server.setNodeStatus(ServerStatus.STOPPED);
-                    } catch (IOException e) {
-                        stopSuccessful = false;
-                        logger.warn("Unable to stop all servers");
-                    }
+        // Send stop command
+        for (ZkECSNode server : hashRing.getAllNodes()) {
+            if (server.getNodeStatus() == ServerStatus.RUNNING) {
+                try {
+                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.STOP
+                    ), 5000, TimeUnit.MILLISECONDS);
+                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.STOP_ACK) throw new IOException();
+                    server.setNodeStatus(ServerStatus.STOPPED);
+                } catch (IOException e) {
+                    stopSuccessful = false;
+                    logger.warn("Unable to stop all servers");
                 }
             }
         }
@@ -218,35 +208,28 @@ public class ECSClient implements IECSClient {
      * @return true when shutdown was successful else false
      */
     @Override
-    public boolean shutdown() {
+    public synchronized boolean shutdown() {
 
-        synchronized (hashRing) {
-            if (hashRing.size() == 0) return true;
-        }
+        if (hashRing.size() == 0) return true;
 
         boolean successfulShutdown = true;
-        removalProcess = true;
 
-        synchronized (hashRing) {
-            // Send shutdown command
-            for (ZkECSNode server : hashRing.getAllNodes()) {
-                try {
-                    KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
-                            ECS_NAME,
-                            KVAdminMessage.AdminStatusType.SHUTDOWN
-                    ), 5000, TimeUnit.MILLISECONDS);
-                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
-                    server.setNodeStatus(ServerStatus.OFFLINE);
-                    hashRing.removeServer(server);
-                    ECSNodeRepo.add(server);
-                } catch (IOException e) {
-                    successfulShutdown = false;
-                    logger.warn("Unable to stop all servers");
-                }
+        // Send shutdown command
+        for (ZkECSNode server : hashRing.getAllNodes()) {
+            try {
+                KVAdminMessageProto ack = server.sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.SHUTDOWN
+                ), 5000, TimeUnit.MILLISECONDS);
+                if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
+                server.setNodeStatus(ServerStatus.OFFLINE);
+                hashRing.removeServer(server);
+                ECSNodeRepo.add(server);
+            } catch (IOException e) {
+                successfulShutdown = false;
+                logger.warn("Unable to stop all servers");
             }
         }
-
-        removalProcess = false;
         return successfulShutdown;
     }
 
@@ -256,7 +239,7 @@ public class ECSClient implements IECSClient {
      * @return name of new server
      */
     @Override
-    public IECSNode addNode(String cacheStrategy, int cacheSize) {
+    public synchronized IECSNode addNode(String cacheStrategy, int cacheSize) {
         Collection<IECSNode> addedNodes = addNodes(1 /* Number of Nodes to Add */,
                 cacheStrategy,
                 cacheSize);
@@ -272,12 +255,10 @@ public class ECSClient implements IECSClient {
      * @return set of strings containing the names of the nodes
      */
     @Override
-    public Collection<IECSNode> addNodes(int count, String cacheStrategy, int cacheSize) {
+    public synchronized Collection<IECSNode> addNodes(int count, String cacheStrategy, int cacheSize) {
 
-        synchronized (hashRing) {
-            // Initialize new hash ring to hold the position of the new nodes
-            newHashRing = hashRing.deepCopy(ZkECSNode::new);
-        }
+        // Initialize new hash ring to hold the position of the new nodes
+        newHashRing = hashRing.deepCopy(ZkECSNode::new);
 
         // Set up nodes
         Collection<IECSNode> nodesToAdd = setupNodes(count, cacheStrategy, cacheSize);
@@ -322,7 +303,7 @@ public class ECSClient implements IECSClient {
      * @return array of strings, containing unique names of servers
      */
     @Override
-    public Collection<IECSNode> setupNodes(int count, String cacheStrategy, int cacheSize) {
+    public synchronized Collection<IECSNode> setupNodes(int count, String cacheStrategy, int cacheSize) {
         Collection<IECSNode> nodesToAdd = new ArrayList<>();
 
         for (int numAdded = 0; numAdded < count && !ECSNodeRepo.isEmpty(); numAdded++) {
@@ -347,7 +328,7 @@ public class ECSClient implements IECSClient {
      * @return - returns true on successfully hearing back from count servers
      */
     @Override
-    public boolean awaitNodes(int count, int timeout) {
+    public synchronized boolean awaitNodes(int count, int timeout) {
         long start = System.currentTimeMillis();
         while (System.currentTimeMillis() - start < (long) timeout) {
             boolean nodesResponded = newHashRing.getAllNodes().stream()
@@ -375,14 +356,12 @@ public class ECSClient implements IECSClient {
      * @return true when removal of nodeNames was successful else false
      */
     @Override
-    public boolean removeNodes(Collection<String> nodeNames) {
+    public synchronized boolean removeNodes(Collection<String> nodeNames) {
 
         boolean successfulStop = true;
 
-        synchronized (hashRing) {
-            // make a new hash ring copy
-            newHashRing = hashRing.deepCopy(ZkECSNode::new);
-        }
+        // make a new hash ring copy
+        newHashRing = hashRing.deepCopy(ZkECSNode::new);
 
         // Go around ring and mark prospective clients as stopping
         for (String name : nodeNames) {
@@ -394,8 +373,6 @@ public class ECSClient implements IECSClient {
         final List<HashRangeTransfer> transferList = calculateNodeTransfers();
         boolean transferExecution = executeTransfers(transferList);
         successfulStop = successfulStop && transferExecution;
-
-        removalProcess = true;
 
         // shutdown respective servers
         for (ZkECSNode server : newHashRing.getAllNodes()) {
@@ -417,8 +394,6 @@ public class ECSClient implements IECSClient {
             }
         }
 
-        removalProcess = false;
-
         // Update data
         try {
             zk.setData(ZooKeeperService.ZK_METADATA, newHashRing.toConfig().getBytes(StandardCharsets.UTF_8));
@@ -427,27 +402,21 @@ public class ECSClient implements IECSClient {
         }
 
         // Reset state
-        synchronized (hashRing) {
-            hashRing.clear();
-            hashRing.addAll(newHashRing);
-        }
+        hashRing.clear();
+        hashRing.addAll(newHashRing);
         newHashRing = new ECSHashRing<>();
 
         return successfulStop;
     }
 
     @Override
-    public Map<String, IECSNode> getNodes() {
-        synchronized (hashRing) {
-            return hashRing.getAllNodes().stream().collect(Collectors.toMap(IECSNode::getNodeName, Function.identity()));
-        }
+    public synchronized Map<String, IECSNode> getNodes() {
+        return hashRing.getAllNodes().stream().collect(Collectors.toMap(IECSNode::getNodeName, Function.identity()));
     }
 
     @Override
-    public IECSNode getNodeByKey(String Key) {
-        synchronized (hashRing) {
-            return hashRing.getServer(Key);
-        }
+    public synchronized IECSNode getNodeByKey(String Key) {
+        return hashRing.getServer(Key);
     }
 
     /**
@@ -455,7 +424,7 @@ public class ECSClient implements IECSClient {
      *
      * @param transferList - Object representing transfer information between two servers
      */
-    private boolean executeTransfers(List<HashRangeTransfer> transferList) {
+    private synchronized boolean executeTransfers(List<HashRangeTransfer> transferList) {
         boolean successfulTransfer = true;
         for (HashRangeTransfer transfer : transferList) {
             try {
@@ -482,7 +451,7 @@ public class ECSClient implements IECSClient {
      * 2. If the node is in state ServerStatus.STOPPING:
      * - Look ahead in HashRing for a currently ServerStatus.RUNNING to give data to
      */
-    private List<HashRangeTransfer> calculateNodeTransfers() {
+    private synchronized List<HashRangeTransfer> calculateNodeTransfers() {
 
         List<ZkECSNode> changedServerState = newHashRing.getAllNodes();
         List<HashRangeTransfer> transferList = new ArrayList<>();
@@ -503,7 +472,7 @@ public class ECSClient implements IECSClient {
      *
      * @param node - get the next valid running node from the current position
      */
-    private ZkECSNode getNextValidNode(ZkECSNode node) {
+    private synchronized ZkECSNode getNextValidNode(ZkECSNode node) {
 
         ZkECSNode nextNode = node;
         for (int pos = 0; pos < newHashRing.size(); pos++) {
@@ -545,9 +514,7 @@ public class ECSClient implements IECSClient {
                 if (newServerConnected != null && newServerConnected.getNodeStatus() == ServerStatus.INACTIVE) {
 
                     // Update state of server in newHashRing
-                    newHashRing.removeServer(newServerConnected);
                     newServerConnected.setNodeStatus(ServerStatus.STARTING);
-                    newHashRing.addServer(newServerConnected);
 
                     // Establish watch on new znode
                     try {
@@ -570,33 +537,25 @@ public class ECSClient implements IECSClient {
      *
      * @param node - the following node has lost connection to ZK
      */
-    public void handleNodeFailure(ZkECSNode node) {
+    public synchronized void handleNodeFailure(ZkECSNode node) {
 
         logger.debug("Node failure triggered");
 
-        if (removalProcess) return;
-
         // Check whether the node is currently active:
         ECSNode serverFailed;
-        synchronized (hashRing) {
-            serverFailed = hashRing.getNodeByName(node.getNodeName());
-        }
+        serverFailed = hashRing.getNodeByName(node.getNodeName());
 
         if (serverFailed != null) {
             logger.info((serverFailed.getNodeName()));
             // need to recover from an active server failure
             node.setNodeStatus(ServerStatus.OFFLINE);
             // remove from the node pool
-            synchronized (hashRing) {
-                hashRing.removeServer(node);
-            }
+            hashRing.removeServer(node);
             // add to queue
             ECSNodeRepo.add(node);
             // send metadata update to everyone
             try {
-                synchronized (hashRing) {
-                    zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
-                }
+                zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
             } catch (IOException e) {
                 logger.error(String.format("Unable to send metadata. Due to server failure from: %s", serverFailed.getNodeName()), e);
             }
@@ -611,15 +570,13 @@ public class ECSClient implements IECSClient {
      *
      * @param node - failed node response
      */
-    private void recoverState(ZkECSNode node) {
+    private synchronized void recoverState(ZkECSNode node) {
         if (newHashRing.size() == 0) throw new IllegalStateException("No server queued up for start");
 
         // Set the state to offline
         node.setNodeStatus(ServerStatus.OFFLINE);
         // Remove the node from the current new configuration
-        synchronized (hashRing) {
-            newHashRing.removeServer(node);
-        }
+        newHashRing.removeServer(node);
         // Add the server back to the original repository
         ECSNodeRepo.add(node);
     }
@@ -627,7 +584,7 @@ public class ECSClient implements IECSClient {
     /**
      * Invokes a remote ssh process to start server at specified host & port
      */
-    private void invokeKVServerProcess(IECSNode nodeData, String cacheStrategy, int cacheSize) throws IOException {
+    private synchronized void invokeKVServerProcess(IECSNode nodeData, String cacheStrategy, int cacheSize) throws IOException {
         String script = String.join(" ",
                 "java -jar",
                 SERVER_JAR,
