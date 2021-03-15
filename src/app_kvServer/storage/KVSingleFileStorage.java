@@ -133,6 +133,32 @@ public class KVSingleFileStorage implements IKVStorage {
         }
     }
 
+    @Override
+    public void deleteIf(Predicate<KVPair> filter) {
+        try {
+            lock.writeLock().lock();
+            // 1. Remove dead entries; this may speed things up
+            compactTombstones();
+
+            // 2. Copy over non-filtered keys into a new file
+            final File tempStorage = new File(storage.getAbsolutePath() + ".tmp." + System.currentTimeMillis());
+            try (Stream<String> inputLines = Files.lines(storage.toPath()); PrintWriter output = new PrintWriter(new FileWriter(tempStorage))) {
+                inputLines.filter(line -> !filter.test(
+                        new KVPair(line.substring(1, line.indexOf(KVPair.KV_DELIMITER)), line.substring(line.indexOf(KVPair.KV_DELIMITER) + 1))
+                )).forEach(output::println);
+            }
+
+            // 3. Overwrite original file
+            if (!storage.delete() || !tempStorage.renameTo(storage)) {
+                throw new IOException("Unable to clear original file");
+            }
+        } catch (IOException e) {
+            logger.error("Could not delete KV pairs", e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     /**
      * NOT thread-safe -- use an external ReadLock
      */

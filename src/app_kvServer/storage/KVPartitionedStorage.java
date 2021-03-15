@@ -57,5 +57,10 @@ public class KVPartitionedStorage implements IKVStorage {
                 .reduce(Stream::concat)
                 .orElseGet(Stream::empty);
     }
+
+    @Override
+    public void deleteIf(Predicate<KVPair> filter) {
+        stores.forEach(store -> store.deleteIf(filter));
+    }
 }
 
