@@ -20,7 +20,7 @@ public class KVAdminMessageProto implements KVAdminMessage {
                 .setSender(sender)
                 .setStatus(statusType.ordinal())
                 .setStart(range[0])
-                .setEnd(range[0])
+                .setEnd(range[1])
                 .setAddress(host)
                 .build();
     }
