@@ -47,12 +47,17 @@ public interface IKVStorage {
     /**
      * Get a stream of all {@link KVPair}s in storage which match a certain criteria.
      * <p>
-     * This stream is likely backed by a file handle so callers should Remember to call {@link Stream#close()} on the
+     * This stream is likely backed by a file handle so callers should remember to call {@link Stream#close()} on the
      * resulting stream after it's been processed, or use within a try-with-resources statement.
      *
      * @return {@link Stream} of {@link KVPair} (ideally lazily populated) or empty stream on error
      */
     public Stream<KVPair> openKvStream(Predicate<KVPair> filter);
+
+    /**
+     * Batch deletion of all {@link KVPair}s in storage which match a certain criteria.
+     */
+    public void deleteIf(Predicate<KVPair> filter);
 
     /**
      * Container class for a key-value pair

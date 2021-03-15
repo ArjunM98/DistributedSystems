@@ -2,6 +2,8 @@ package testing;
 
 import app_kvServer.IKVServer.CacheStrategy;
 import app_kvServer.cache.IKVCache;
+import app_kvServer.storage.IKVStorage;
+import app_kvServer.storage.KVPartitionedStorage;
 import client.KVStore;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
@@ -139,6 +141,27 @@ public class AdditionalTest extends TestCase {
 
         response = kvClient.get(key);
         assertTrue(response.getValue().isEmpty());
+    }
+
+    /**
+     * Tests KVPartitionedStorage's batch deletion functionality
+     */
+    @Test
+    public void testBatchDeleteStorage() {
+        final KVPartitionedStorage storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY + "/test");
+        storage.clearStorage();
+
+        // Populate storage
+        for (int i = 0; i < 100; i++) storage.putKV("key_" + i, "value_" + i);
+        for (int i = 0; i < 100; i++) assertTrue(storage.inStorage("key_" + i));
+
+        // Delete even keys
+        storage.deleteIf(kv -> Integer.parseInt(kv.key.substring("key_".length())) % 2 == 0);
+
+        // Assert only odd keys remaining
+        for (int i = 0; i < 100; i++) assertEquals(i % 2 != 0, storage.inStorage("key_" + i));
+
+        storage.clearStorage();
     }
 
     /**

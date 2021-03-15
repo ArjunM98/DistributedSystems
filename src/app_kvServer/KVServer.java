@@ -12,7 +12,9 @@ import shared.Utilities;
 import shared.messages.KVMessage;
 
 import java.io.IOException;
-import java.net.*;
+import java.net.BindException;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
@@ -304,6 +306,14 @@ public class KVServer extends Thread implements IKVServer {
                 }
             });
         }
+    }
+
+    /**
+     * See {@link IKVStorage#deleteIf(Predicate)}
+     */
+    public void deleteIf(Predicate<KVPair> filter) {
+        storage.deleteIf(filter);
+        cache.clearCache(); // expensive af but much simpler than actually pruning cache
     }
 
     /**

@@ -22,6 +22,8 @@ public interface KVAdminMessage {
         TRANSFER_REQ_ACK,   /* Responds with details on transfer request port */
         TRANSFER_BEGIN,     /* Begin transfer */
         TRANSFER_COMPLETE,  /* Transfer between servers was successful */
+        DELETE,             /* Delete specified key range from KVServer */
+        DELETE_ACK,         /* Completed deletion of specified key range from KVServer */
         FAILED,             /* An illegal request occurred */
         ERROR               /* An error occurred */
     }

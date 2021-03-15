@@ -127,8 +127,10 @@ public class ECSServerConnection {
                     handleTransfer();
                     return;
                 case TRANSFER_BEGIN:
-                    logger.info("RECEIVED TRANSFER BEGIN");
                     handleTransferBegin();
+                    return;
+                case DELETE:
+                    handleDelete(req);
                     return;
                 default:
                     logger.info(req.getSender());
@@ -172,6 +174,12 @@ public class ECSServerConnection {
     private void handleUnlock() throws IOException {
         server.updateServerState(State.UNLOCKED);
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.UNLOCK_ACK).getBytes());
+    }
+
+    private void handleDelete(KVAdminMessageProto req) throws IOException {
+        Predicate<IKVStorage.KVPair> filter = computeRangeFilter(req.getRange());
+        server.deleteIf(filter);
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DELETE_ACK).getBytes());
     }
 
     private void handleTransfer() throws IOException {
@@ -230,28 +238,7 @@ public class ECSServerConnection {
                     e.printStackTrace();
                 }
 
-                String[] range = req.getRange();
-                BigInteger l = new BigInteger(range[0], 16);
-                BigInteger r = new BigInteger(range[1], 16);
-
-                Predicate<IKVStorage.KVPair> filter = null;
-                switch (r.compareTo(l)) {
-                    case 0: // Single node hash ring: this node is responsible for everything
-                        filter = kvPair -> true;
-                        break;
-                    case 1: // Regular hash ring check: (node >= hash > predecessor)
-                        filter = kvPair -> {
-                            BigInteger hash = ECSHashRing.computeHash(kvPair.key);
-                            return (r.compareTo(hash) >= 0 && l.compareTo(hash) < 0);
-                        };
-                        break;
-                    case -1: // Wraparound case: either (node >= hash) OR (hash > predecessor)
-                        filter = kvPair -> {
-                            BigInteger hash = ECSHashRing.computeHash(kvPair.key);
-                            return (r.compareTo(hash) >= 0 || l.compareTo(hash) < 0);
-                        };
-                        break;
-                }
+                Predicate<IKVStorage.KVPair> filter = computeRangeFilter(req.getRange());
 
                 try (Stream<String> s = server.openKvStream(filter);
                      PrintWriter out = new PrintWriter(Objects.requireNonNull(socket).getOutputStream(), true)) {
@@ -264,6 +251,31 @@ public class ECSServerConnection {
                 }
             }
         });
+    }
+
+    private Predicate<IKVStorage.KVPair> computeRangeFilter(String[] range) {
+
+        BigInteger l = new BigInteger(range[0], 16);
+        BigInteger r = new BigInteger(range[1], 16);
+        Predicate<IKVStorage.KVPair> filter = null;
+        switch (r.compareTo(l)) {
+            case 0: // Single node hash ring: this node is responsible for everything
+                filter = kvPair -> true;
+                break;
+            case 1: // Regular hash ring check: (node >= hash > predecessor)
+                filter = kvPair -> {
+                    BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                    return (r.compareTo(hash) >= 0 && l.compareTo(hash) < 0);
+                };
+                break;
+            case -1: // Wraparound case: either (node >= hash) OR (hash > predecessor)
+                filter = kvPair -> {
+                    BigInteger hash = ECSHashRing.computeHash(kvPair.key);
+                    return (r.compareTo(hash) >= 0 || l.compareTo(hash) < 0);
+                };
+                break;
+        }
+        return filter;
     }
 
     private void handleTransferBegin() {
