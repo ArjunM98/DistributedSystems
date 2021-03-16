@@ -24,6 +24,12 @@ public interface KVAdminMessage {
         TRANSFER_COMPLETE,  /* Transfer between servers was successful */
         DELETE,             /* Delete specified key range from KVServer */
         DELETE_ACK,         /* Completed deletion of specified key range from KVServer */
+        CONNECT,            /* Connect to replica server */
+        CONNECT_ACK,        /* Ack the replica connection process */
+        DISCONNECT,         /* Disconnect from the specified server */
+        DISCONNECT_ACK,     /* Acknowledge Disconnect */
+        PERSIST_SERVER,     /* Ask for an open port for a persistent server connection */
+        PERSIST_SERVER_ACK, /* Responds with an open port for a persistent server connection */
         FAILED,             /* An illegal request occurred */
         ERROR               /* An error occurred */
     }

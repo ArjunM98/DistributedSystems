@@ -132,6 +132,15 @@ public class ECSServerConnection {
                 case DELETE:
                     handleDelete(req);
                     return;
+                case DISCONNECT:
+                    handleDisconnect(req);
+                    return;
+                case CONNECT:
+                    handleConnect(req);
+                    return;
+                case PERSIST_SERVER:
+                    handlePersistentConn(req);
+                    return;
                 default:
                     logger.info(req.getSender());
                     logger.info(server.getServerName());
@@ -140,6 +149,21 @@ public class ECSServerConnection {
         } catch (KVServerException | IOException e) {
             logger.warn(String.format("Error processing request: %s", e.getMessage()));
         }
+    }
+
+    private void handleDisconnect(KVAdminMessageProto req) throws IOException {
+        // TODO: Disconnect from server with serverName in req.getValue()
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_ACK).getBytes());
+    }
+
+    private void handleConnect(KVAdminMessageProto req) throws IOException {
+        // TODO: Connect to server at host:port in req.getValue()
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_ACK).getBytes());
+    }
+
+    private void handlePersistentConn(KVAdminMessageProto req) throws IOException {
+        // TODO: Return an open port and listen on that port for a persistent server connection
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.PERSIST_SERVER_ACK).getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {

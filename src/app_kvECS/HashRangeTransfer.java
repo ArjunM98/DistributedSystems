@@ -128,6 +128,11 @@ public class HashRangeTransfer {
         /**
          * i.e. destination node is joining the ring
          */
-        DESTINATION_ADD
+        DESTINATION_ADD,
+
+        /**
+         * ie. replicating data
+         */
+        REPLICATION
     }
 }

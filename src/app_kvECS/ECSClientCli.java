@@ -29,7 +29,7 @@ public class ECSClientCli implements Runnable {
      */
     public ECSClientCli(String[] args) {
         String ecsConfigPath, zkConnectionString = ZooKeeperService.LOCALHOST_CONNSTR;
-        Level logLevel = Level.INFO;
+        Level logLevel = Level.ALL;
 
         // 1. Validate args
         try {
