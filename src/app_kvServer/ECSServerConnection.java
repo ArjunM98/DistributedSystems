@@ -19,6 +19,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Predicate;
@@ -39,6 +40,7 @@ public class ECSServerConnection {
     private final String zNode;
 
     private final ECSHashRing<ECSNode> allEcsNodes;
+    private final ExecutorService THREAD_POOL = Executors.newCachedThreadPool();
     private CountDownLatch transferLatch;
 
     /**
@@ -66,6 +68,7 @@ public class ECSServerConnection {
     }
 
     public void close() throws IOException {
+        THREAD_POOL.shutdownNow();
         this.zkService.close();
     }
 
@@ -132,6 +135,15 @@ public class ECSServerConnection {
                 case DELETE:
                     handleDelete(req);
                     return;
+                case DISCONNECT_REPLICA:
+                    handleDisconnect(req);
+                    return;
+                case CONNECT_REPLICA:
+                    handleConnect(req);
+                    return;
+                case REPLICA_PORT:
+                    handlePersistentConn(req);
+                    return;
                 default:
                     logger.info(req.getSender());
                     logger.info(server.getServerName());
@@ -140,6 +152,21 @@ public class ECSServerConnection {
         } catch (KVServerException | IOException e) {
             logger.warn(String.format("Error processing request: %s", e.getMessage()));
         }
+    }
+
+    private void handleDisconnect(KVAdminMessageProto req) throws IOException {
+        // TODO: Disconnect from server with serverName in req.getValue()
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA).getBytes());
+    }
+
+    private void handleConnect(KVAdminMessageProto req) throws IOException {
+        // TODO: Connect to server at host:port in req.getValue()
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA).getBytes());
+    }
+
+    private void handlePersistentConn(KVAdminMessageProto req) throws IOException {
+        // TODO: Return an open port and listen on that port for a persistent server connection
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK).getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
@@ -187,7 +214,7 @@ public class ECSServerConnection {
 
         int portNum = socket.getLocalPort();
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.TRANSFER_REQ_ACK, Integer.toString(portNum)).getBytes());
-        Executors.newCachedThreadPool().execute(() -> {
+        THREAD_POOL.execute(() -> {
             boolean beginReceived = false;
             transferLatch = new CountDownLatch(1);
             try {
@@ -219,7 +246,7 @@ public class ECSServerConnection {
         logger.info("HANDLING MOVE");
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.MOVE_DATA_ACK).getBytes());
         logger.info("SENT MOVE ACK BACK");
-        Executors.newCachedThreadPool().execute(() -> {
+        THREAD_POOL.execute(() -> {
             transferLatch = new CountDownLatch(1);
             boolean beginReceived = false;
             try {

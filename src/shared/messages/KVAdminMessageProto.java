@@ -25,6 +25,15 @@ public class KVAdminMessageProto implements KVAdminMessage {
                 .build();
     }
 
+    public KVAdminMessageProto(String sender, AdminStatusType statusType, String[] range) {
+        msg = ProtoKVAdminMessage.KVAdminProto.newBuilder()
+                .setSender(sender)
+                .setStatus(statusType.ordinal())
+                .setStart(range[0])
+                .setEnd(range[1])
+                .build();
+    }
+
     public KVAdminMessageProto(byte[] data) throws InvalidProtocolBufferException {
         msg = ProtoKVAdminMessage.KVAdminProto.parseFrom(data);
     }
