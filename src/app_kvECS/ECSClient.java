@@ -383,7 +383,7 @@ public class ECSClient implements IECSClient {
         ECSHashRing<ZkECSNode> tempHashRing = newHashRing.deepCopy(ZkECSNode::new);
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STOPPING) {
-                boolean reconciliation = removeNodeReconciliation(tempHashRing, server);
+                boolean reconciliation = removeNodeReconciliation(tempHashRing, server, false);
                 successfulStop = successfulStop && reconciliation;
                 tempHashRing.removeServer(server);
             }
@@ -484,7 +484,7 @@ public class ECSClient implements IECSClient {
         // 2. Copy replicated data from previous two predecessors
         for (HashRangeTransfer transfer : predecessorReplication) {
             try {
-                logger.debug("transferring from " + transfer.getSourceNode().getNodeName() + " to " + transfer.getDestinationNode().getNodeName());
+                logger.debug("Transferring replicated data from " + transfer.getSourceNode().getNodeName() + " to " + transfer.getDestinationNode().getNodeName());
                 transfer.execute(zk);
             } catch (IOException e) {
                 successfulReconciliation = false;
@@ -495,12 +495,13 @@ public class ECSClient implements IECSClient {
         // 3. Establish new KVServer connections on predecessors and successors
         boolean newConnectionPred = establishNewKVServerConn(predecessorReplication);
         boolean newConnectionSucc = establishNewKVServerConn(successorReplication);
-        boolean deleteConnections = deleteConnections(tempRing, predecessorReplication);
-        successfulReconciliation = successfulReconciliation && deleteConnections && newConnectionPred && newConnectionSucc;
+        boolean deleteConnectionsAndData = deleteStaleRangesAndConnections(tempRing, predecessorReplication);
+        successfulReconciliation = successfulReconciliation && deleteConnectionsAndData && newConnectionPred && newConnectionSucc;
 
         // 4. Release write locks on predecessors
         for (HashRangeTransfer transfer : predecessorReplication) {
             try {
+                logger.debug("Releasing write lock on " + transfer.getSourceNode().getNodeName());
                 KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.UNLOCK
@@ -512,15 +513,12 @@ public class ECSClient implements IECSClient {
             }
         }
 
-        // 5. Clean up successor servers by deleting stale data ranges
-        boolean deleteStaleData = deleteStaleRanges(tempRing, predecessorReplication);
-        successfulReconciliation = successfulReconciliation && deleteStaleData;
-
-        // 6. 3rd successor of newNode needs to delete keyRange of newNode (edge case not handled in
-        // deleteConnectionsAndRanges)
+        // 5. 3rd successor of newNode needs to delete keyRange of newNode (edge case not handled in
+        // deleteStaleRangesAndConnections)
         ZkECSNode successor = tempRing.getNthSuccessor(newNode, 3, false);
         if (!successor.getNodeName().equals(newNode.getNodeName())) {
             try {
+                logger.debug("Delete key range of " + newNode.getNodeName() + " from " + successor.getNodeName());
                 successor.sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.DELETE,
@@ -543,7 +541,7 @@ public class ECSClient implements IECSClient {
      * @return
      */
     private synchronized boolean removeNodeReconciliation(ECSHashRing<ZkECSNode> tempRing,
-                                                          ZkECSNode removedNode) {
+                                                          ZkECSNode removedNode, boolean failureRecovery) {
         boolean successfulReconciliation = true;
 
         // 1. Calculate Node Transfers
@@ -568,13 +566,16 @@ public class ECSClient implements IECSClient {
         }
 
         // 3. 3rd successor needs to also get the data of the removed node
-        ZkECSNode successor = tempRing.getNthSuccessor(removedNode, 3, false);
-        if (!successor.getNodeName().equals(removedNode.getNodeName())) {
-            try {
-                new HashRangeTransfer(removedNode, successor, removedNode.getNodeHashRange(), TransferType.REPLICATION).execute(zk);
-            } catch (IOException e) {
-                successfulReconciliation = false;
-                logger.warn("Unable to replicate predecessor data onto successors", e);
+        if (!failureRecovery) {
+            ZkECSNode successor = tempRing.getNthSuccessor(removedNode, 3, false);
+            if (!successor.getNodeName().equals(removedNode.getNodeName())) {
+                try {
+                    logger.debug("transferring from " + removedNode.getNodeName() + " to " + successor.getNodeName());
+                    new HashRangeTransfer(removedNode, successor, removedNode.getNodeHashRange(), TransferType.REPLICATION).execute(zk);
+                } catch (IOException e) {
+                    successfulReconciliation = false;
+                    logger.warn("Unable to replicate predecessor data onto successors", e);
+                }
             }
         }
 
@@ -583,12 +584,29 @@ public class ECSClient implements IECSClient {
         successfulReconciliation = successfulReconciliation && newConnection;
 
         // 5. Delete hanging stale persistent connections
-        boolean deleteConnection = deleteConnections(tempRing, replicationTransfers);
-        successfulReconciliation = successfulReconciliation && deleteConnection;
+        if (!failureRecovery) {
+            for (HashRangeTransfer transfer : replicationTransfers) {
+                try {
+                    logger.debug("Deleting persistent connection between " + transfer.getSourceNode().getNodeName() +
+                            " and " + removedNode.getNodeName());
+                    KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
+                            ECS_NAME,
+                            KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA,
+                            removedNode.getNodeName()
+                    ), 5000, TimeUnit.MILLISECONDS);
+                    if (ack.getStatus() != KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK)
+                        throw new IOException();
+                } catch (IOException e) {
+                    successfulReconciliation = false;
+                    logger.warn("Unable to disconnect from removed node", e);
+                }
+            }
+        }
 
         // 5. Release write locks on predecessors
         for (HashRangeTransfer transfer : replicationTransfers) {
             try {
+                logger.debug("Releasing lock on " + transfer.getSourceNode().getNodeName());
                 KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.UNLOCK
@@ -604,49 +622,15 @@ public class ECSClient implements IECSClient {
     }
 
     /**
-     * Deletes persistent connection between source node and the 3rd successor from source node
+     * Deletes key range and connections of source node to the 3rd successor from source node
      *
      * @param tempRing     hashRing associated with current state
      * @param transferList list of transferObjects
      * @return
      */
-    private synchronized boolean deleteConnections(ECSHashRing<ZkECSNode> tempRing,
+    private synchronized boolean deleteStaleRangesAndConnections(ECSHashRing<ZkECSNode> tempRing,
                                                    List<HashRangeTransfer> transferList) {
-
-        boolean disconnectSuccessful = true;
-        for (HashRangeTransfer transfer : transferList) {
-
-            // 1. Find 3rd successor from source node in each transfer object
-            ZkECSNode successor = tempRing.getNthSuccessor(transfer.getSourceNode(), 3, false);
-            if (successor.getNodeName().equals(transfer.getSourceNode().getNodeName())) continue;
-
-            // 2. Disconnect source node from successor
-            try {
-                KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
-                        ECS_NAME,
-                        KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA,
-                        successor.getNodeName()
-                ), 5000, TimeUnit.MILLISECONDS);
-                if (ack.getStatus() != KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK) throw new IOException();
-            } catch (IOException e) {
-                disconnectSuccessful = false;
-                logger.warn("Unable to disconnect from stale replicas");
-            }
-
-        }
-        return disconnectSuccessful;
-    }
-
-    /**
-     * Deletes key range of source node on the 3rd successor from source node
-     *
-     * @param tempRing     hashRing associated with current state
-     * @param transferList list of transferObjects
-     * @return
-     */
-    private synchronized boolean deleteStaleRanges(ECSHashRing<ZkECSNode> tempRing,
-                                                   List<HashRangeTransfer> transferList) {
-        boolean deletionSuccessful = true;
+        boolean staleRemoval = true;
         for (HashRangeTransfer transfer : transferList) {
 
             // 1. Find 3rd successor from source node in each transfer object
@@ -655,19 +639,28 @@ public class ECSClient implements IECSClient {
 
             // 2. Delete key range from successor
             try {
+                logger.debug("Deleting persistent connection between " + transfer.getSourceNode().getNodeName() +
+                        " and " + successor.getNodeName());
+                KVAdminMessageProto ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
+                        ECS_NAME,
+                        KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA,
+                        successor.getNodeName()
+                ), 5000, TimeUnit.MILLISECONDS);
+                if (ack.getStatus() != KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK) throw new IOException();
+
                 logger.debug("Deleting key range of " + transfer.getSourceNode().getNodeName() + " from " + successor.getNodeName());
-                KVAdminMessageProto ack = successor.sendMessage(zk, new KVAdminMessageProto(
+                ack = successor.sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.DELETE,
                         transfer.getSourceNode().getNodeHashRange()
                 ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.DELETE_ACK) throw new IOException();
             } catch (IOException e) {
-                deletionSuccessful = false;
-                logger.warn("Unable to delete stale data from successor servers");
+                staleRemoval = false;
+                logger.warn("Unable to delete stale data and connections from successor servers");
             }
         }
-        return deletionSuccessful;
+        return staleRemoval;
     }
 
     /**
@@ -693,7 +686,7 @@ public class ECSClient implements IECSClient {
                 availablePort = ack.getValue();
 
                 // 2. Establish persistent server connection from source node to destination node
-                logger.debug("Connect from server " + transfer.getSourceNode().getNodeName() + " to " + transfer.getDestinationNode().getNodeName());
+                logger.debug("Establish persistent connection from " + transfer.getSourceNode().getNodeName() + " to " + transfer.getDestinationNode().getNodeName());
                 ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.CONNECT_REPLICA,
@@ -807,24 +800,28 @@ public class ECSClient implements IECSClient {
         logger.debug("Node failure triggered");
 
         // Check whether the node is currently active:
-        ECSNode serverFailed;
+        ZkECSNode serverFailed;
         serverFailed = hashRing.getNodeByName(node.getNodeName());
 
         if (serverFailed != null) {
             logger.info((serverFailed.getNodeName()));
+            // Node failure reconciliation
+            removeNodeReconciliation(hashRing.deepCopy(ZkECSNode::new), serverFailed, true);
             // need to recover from an active server failure
             node.setNodeStatus(ServerStatus.OFFLINE);
             // remove from the node pool
             hashRing.removeServer(node);
             // add to queue
             ECSNodeRepo.add(node);
-            // send metadata update to everyone
+            // Start up a new server
+            addNode("FIFO", 10);
             try {
-                zk.setData(ZooKeeperService.ZK_METADATA, hashRing.toConfig().getBytes(StandardCharsets.UTF_8));
-            } catch (IOException e) {
-                logger.error(String.format("Unable to send metadata. Due to server failure from: %s", serverFailed.getNodeName()), e);
+                start();
+            } catch (Exception e) {
+                logger.error("Unable to start new server after failure");
             }
         } else {
+            // TODO: Potential work to be done here
             // need to recover from a starting/stopping server failure
         }
 

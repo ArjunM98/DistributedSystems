@@ -156,17 +156,19 @@ public class ECSServerConnection {
 
     private void handleDisconnect(KVAdminMessageProto req) throws IOException {
         // TODO: Disconnect from server with serverName in req.getValue()
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK).getBytes());
     }
 
     private void handleConnect(KVAdminMessageProto req) throws IOException {
         // TODO: Connect to server at host:port in req.getValue()
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA_ACK).getBytes());
     }
 
     private void handlePersistentConn(KVAdminMessageProto req) throws IOException {
         // TODO: Return an open port and listen on that port for a persistent server connection
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK).getBytes());
+        ServerSocket socket = new ServerSocket(0);
+        int portNum = socket.getLocalPort();
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK, Integer.toString(portNum)).getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
