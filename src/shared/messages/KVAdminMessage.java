@@ -3,35 +3,35 @@ package shared.messages;
 public interface KVAdminMessage {
 
     public enum AdminStatusType {
-        EMPTY,              /* Creating a new node state */
-        INIT,               /* Initialize KVServer with associated Metadata */
-        INIT_ACK,           /* Ack INIT procedure */
-        START,              /* Start the KVServer */
-        START_ACK,          /* Ack the start procedure */
-        STOP,               /* Stop the KVServer, client requests rejected. Accept ECS requests */
-        STOP_ACK,           /* Ack the stop process */
-        SHUTDOWN,           /* Exits the KVServer application */
-        SHUTDOWN_ACK,       /* Ack the shutdown process */
-        LOCK,               /* Lock the KVServer for all write operations */
-        LOCK_ACK,           /* Ack lock procedure */
-        UNLOCK,             /* Unlock the KVServer for all write operations */
-        UNLOCK_ACK,         /* Ack the unlock procedure */
-        MOVE_DATA,          /* Move data from a specified range to the specified port */
-        MOVE_DATA_ACK,      /* Ack Move data procedure */
-        TRANSFER_REQ,       /* Request server the data is going to be transferred to */
-        TRANSFER_REQ_ACK,   /* Responds with details on transfer request port */
-        TRANSFER_BEGIN,     /* Begin transfer */
-        TRANSFER_COMPLETE,  /* Transfer between servers was successful */
-        DELETE,             /* Delete specified key range from KVServer */
-        DELETE_ACK,         /* Completed deletion of specified key range from KVServer */
-        CONNECT,            /* Connect to replica server */
-        CONNECT_ACK,        /* Ack the replica connection process */
-        DISCONNECT,         /* Disconnect from the specified server */
-        DISCONNECT_ACK,     /* Acknowledge Disconnect */
-        PERSIST_SERVER,     /* Ask for an open port for a persistent server connection */
-        PERSIST_SERVER_ACK, /* Responds with an open port for a persistent server connection */
-        FAILED,             /* An illegal request occurred */
-        ERROR               /* An error occurred */
+        EMPTY,                     /* Creating a new node state */
+        INIT,                      /* Initialize KVServer with associated Metadata */
+        INIT_ACK,                  /* Ack INIT procedure */
+        START,                     /* Start the KVServer */
+        START_ACK,                 /* Ack the start procedure */
+        STOP,                      /* Stop the KVServer, client requests rejected. Accept ECS requests */
+        STOP_ACK,                  /* Ack the stop process */
+        SHUTDOWN,                  /* Exits the KVServer application */
+        SHUTDOWN_ACK,              /* Ack the shutdown process */
+        LOCK,                      /* Lock the KVServer for all write operations */
+        LOCK_ACK,                  /* Ack lock procedure */
+        UNLOCK,                    /* Unlock the KVServer for all write operations */
+        UNLOCK_ACK,                /* Ack the unlock procedure */
+        MOVE_DATA,                 /* Move data from a specified range to the specified port */
+        MOVE_DATA_ACK,             /* Ack Move data procedure */
+        TRANSFER_REQ,              /* Request server the data is going to be transferred to */
+        TRANSFER_REQ_ACK,          /* Responds with details on transfer request port */
+        TRANSFER_BEGIN,            /* Begin transfer */
+        TRANSFER_COMPLETE,         /* Transfer between servers was successful */
+        DELETE,                    /* Delete specified key range from KVServer */
+        DELETE_ACK,                /* Completed deletion of specified key range from KVServer */
+        CONNECT_REPLICA,           /* Connect to replica server */
+        CONNECT_REPLICA_ACK,       /* Ack the replica connection process */
+        DISCONNECT_REPLICA,        /* Disconnect from the specified server */
+        DISCONNECT_REPLICA_ACK,    /* Acknowledge Disconnect */
+        REPLICA_PORT,              /* Ask for an open port for a persistent server connection */
+        REPLICA_PORT_ACK,          /* Responds with an open port for a persistent server connection */
+        FAILED,                    /* An illegal request occurred */
+        ERROR                      /* An error occurred */
     }
 
     /**

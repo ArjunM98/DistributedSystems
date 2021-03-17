@@ -135,13 +135,13 @@ public class ECSServerConnection {
                 case DELETE:
                     handleDelete(req);
                     return;
-                case DISCONNECT:
+                case DISCONNECT_REPLICA:
                     handleDisconnect(req);
                     return;
-                case CONNECT:
+                case CONNECT_REPLICA:
                     handleConnect(req);
                     return;
-                case PERSIST_SERVER:
+                case REPLICA_PORT:
                     handlePersistentConn(req);
                     return;
                 default:
@@ -156,17 +156,17 @@ public class ECSServerConnection {
 
     private void handleDisconnect(KVAdminMessageProto req) throws IOException {
         // TODO: Disconnect from server with serverName in req.getValue()
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_ACK).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA).getBytes());
     }
 
     private void handleConnect(KVAdminMessageProto req) throws IOException {
         // TODO: Connect to server at host:port in req.getValue()
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_ACK).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA).getBytes());
     }
 
     private void handlePersistentConn(KVAdminMessageProto req) throws IOException {
         // TODO: Return an open port and listen on that port for a persistent server connection
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.PERSIST_SERVER_ACK).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK).getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {

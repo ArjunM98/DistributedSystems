@@ -143,15 +143,14 @@ public class ECSHashRing<T extends ECSNode> {
     }
 
     /**
-     * Return the nth predecessor to the passed-in server. Returns same server if there are less than n < servers in
-     * the hashRing
+     * Return the nth predecessor in reference to the passed-in server
      *
      * @param server server (does not have to be in the ring) to get predecessor for
      * @param n which predecessor to get in reference to server
      * @return
      */
-    public T getNPredecessor(T server, int n) {
-        if (hashRing.isEmpty() || hashRing.size() <= n) return server;
+    public T getNthPredecessor(T server, int n, boolean wrapAround) {
+        if (hashRing.isEmpty() || (!wrapAround && hashRing.size() <= n)) return server;
 
         T predecessor = server;
         for (int i = 0; i < n; i++) {
@@ -180,15 +179,14 @@ public class ECSHashRing<T extends ECSNode> {
     }
 
     /**
-     * Return the nth successor to the passed-in server. Returns same server if there are less than n < servers in
-     * the hashRing
+     * Return the nth successor in reference to the passed-in server
      *
      * @param server server (does not have to be in the ring) to get successor for
      * @param n which successor to get in reference to server
      * @return
      */
-    public T getNSuccessor(T server, int n) {
-        if (hashRing.isEmpty() || hashRing.size() <= n) return server;
+    public T getNthSuccessor(T server, int n, boolean wrapAround) {
+        if (hashRing.isEmpty() || (!wrapAround && hashRing.size() <= n)) return server;
 
         T successor = server;
         for (int i = 0; i < n; i++) {
