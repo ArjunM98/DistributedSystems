@@ -132,7 +132,8 @@ public class ECSClient implements IECSClient {
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STARTING) {
                 tempHashRing.addServer(new ZkECSNode(server));
-                successfulTransfer = successfulTransfer && addNodeReconciliation(tempHashRing, server);
+                boolean reconciliation = addNodeReconciliation(tempHashRing, server);
+                successfulTransfer = successfulTransfer && reconciliation;
             }
         }
 
@@ -382,7 +383,8 @@ public class ECSClient implements IECSClient {
         ECSHashRing<ZkECSNode> tempHashRing = newHashRing.deepCopy(ZkECSNode::new);
         for (ZkECSNode server : newHashRing.getAllNodes()) {
             if (server.getNodeStatus() == ServerStatus.STOPPING) {
-                successfulStop = successfulStop && removeNodeReconciliation(tempHashRing, server);
+                boolean reconciliation = removeNodeReconciliation(tempHashRing, server);
+                successfulStop = successfulStop && reconciliation;
                 tempHashRing.removeServer(server);
             }
         }
