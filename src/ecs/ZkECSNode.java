@@ -45,8 +45,8 @@ public class ZkECSNode extends ECSNode {
     public ZkECSNode(ZkECSNode original) {
         super(original);
         this.serverStatus = original.serverStatus;
-        this.cacheStrategy = original.getNodeCacheStrategy();
-        this.cacheSize = original.getNodeCacheSize();
+        this.cacheStrategy = original.cacheStrategy;
+        this.cacheSize = original.cacheSize;
     }
 
     /**
