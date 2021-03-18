@@ -1,6 +1,7 @@
 package app_kvServer.storage;
 
 import app_kvServer.KVServerException;
+import app_kvServer.storage.IKVStorage.KVPair.Tombstone;
 import org.apache.log4j.Logger;
 import shared.messages.KVMessage;
 
@@ -73,7 +74,7 @@ public class KVSingleFileStorage implements IKVStorage {
     public void putKV(String key, String value) {
         try {
             lock.writeLock().lock();
-            writeToStore(key, value, Tombstone.VALID);
+            writeToStore(new KVPair(Tombstone.VALID, key, value));
         } finally {
             lock.writeLock().unlock();
         }
@@ -84,7 +85,7 @@ public class KVSingleFileStorage implements IKVStorage {
         if (!inStorage(key)) throw new KVServerException("Key not found in storage", KVMessage.StatusType.DELETE_ERROR);
         try {
             lock.writeLock().lock();
-            writeToStore(key, "", Tombstone.DEAD);
+            writeToStore(new KVPair(Tombstone.DEAD, key, ""));
         } finally {
             lock.writeLock().unlock();
         }
@@ -112,9 +113,11 @@ public class KVSingleFileStorage implements IKVStorage {
             // 2. Copy over the desired keys into a new file
             final File tempStorage = new File(storage.getAbsolutePath() + ".tmp." + System.currentTimeMillis());
             try (Stream<String> inputLines = Files.lines(storage.toPath()); PrintWriter output = new PrintWriter(new FileWriter(tempStorage))) {
-                inputLines.map(line -> new KVPair(line.substring(1, line.indexOf(KVPair.KV_DELIMITER)), line.substring(line.indexOf(KVPair.KV_DELIMITER) + 1)))
+                inputLines.map(KVPair::deserialize)
+                        .filter(Objects::nonNull)
                         .filter(filter)
-                        .forEach(kv -> output.println(kv.key + KVPair.KV_DELIMITER + kv.value));
+                        .map(KVPair::serialize)
+                        .forEach(output::println);
             }
 
             // 3. Stream the results from this new file
@@ -143,9 +146,11 @@ public class KVSingleFileStorage implements IKVStorage {
             // 2. Copy over non-filtered keys into a new file
             final File tempStorage = new File(storage.getAbsolutePath() + ".tmp." + System.currentTimeMillis());
             try (Stream<String> inputLines = Files.lines(storage.toPath()); PrintWriter output = new PrintWriter(new FileWriter(tempStorage))) {
-                inputLines.filter(line -> !filter.test(
-                        new KVPair(line.substring(1, line.indexOf(KVPair.KV_DELIMITER)), line.substring(line.indexOf(KVPair.KV_DELIMITER) + 1))
-                )).forEach(output::println);
+                inputLines.map(KVPair::deserialize)
+                        .filter(Objects::nonNull)
+                        .filter(filter.negate())
+                        .map(KVPair::serialize)
+                        .forEach(output::println);
             }
 
             // 3. Overwrite original file
@@ -177,11 +182,11 @@ public class KVSingleFileStorage implements IKVStorage {
     /**
      * NOT thread-safe -- use an external WriteLock
      */
-    private void writeToStore(String key, String value, Tombstone tombstone) {
+    private void writeToStore(KVPair kv) {
         try {
-            if (!storage.canWrite() && !storage.createNewFile()) logger.error("Could not write to store");
+            if (!storage.canWrite() && !storage.createNewFile()) logger.warn("Could not access store");
             try (PrintWriter writer = new PrintWriter(new FileWriter(storage, true))) {
-                writer.println(tombstone.marker + key + KVPair.KV_DELIMITER + value);
+                writer.println(kv.serialize());
             }
         } catch (IOException e) {
             logger.error("An error occurred during write to store.", e);
@@ -225,17 +230,6 @@ public class KVSingleFileStorage implements IKVStorage {
         // 3. Overwrite original file
         if (!storage.delete() || !tempStorage.renameTo(storage)) {
             throw new IOException("Unable to clear original file");
-        }
-    }
-
-    enum Tombstone {
-        VALID('V'),
-        DEAD('D');
-
-        final char marker;
-
-        Tombstone(char marker) {
-            this.marker = marker;
         }
     }
 }

@@ -164,7 +164,7 @@ public class ECSClientCli implements Runnable {
     private void handleGetNodeByKey(List<String> args) {
         IECSNode node = ecs.getNodeByKey(args.get(0));
         if (node != null) {
-            System.out.printf("%s:%d is responsible for key $s\n", node.getNodeName(), node.getNodePort(), args.get(0));
+            System.out.printf("%s:%d is responsible for key %s\n", node.getNodeName(), node.getNodePort(), args.get(0));
         } else {
             System.out.println("The storage service does not contain any servers");
         }

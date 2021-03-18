@@ -1,7 +1,6 @@
 package app_kvECS;
 
 import ecs.ECSHashRing;
-import ecs.ECSNode;
 import ecs.IECSNode;
 import ecs.ZkECSNode;
 import ecs.zk.ZooKeeperService;
@@ -279,24 +278,12 @@ public class ECSClient implements IECSClient {
                 // Invoke SSH call to each new server
                 invokeKVServerProcess(node, cacheStrategy, cacheSize);
             }
-        } catch (IOException e) {
-            logger.error("Unable to start server(s)", e);
-            // reverse setup stage
-            nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
-                node.setNodeStatus(ServerStatus.INACTIVE);
-                node.clearNodeCachePolicy();
-                ECSNodeRepo.add(node);
-            });
-            nodesToAdd = null;
-            newHashRing = new ECSHashRing<>();
-        }
 
-        // wait for response on the newly added nodes
-        try {
+            // wait for response on the newly added nodes
             boolean responseReceived = awaitNodes(count, 15000 /* 15 second timeout limit */);
-            if (!responseReceived) throw new Exception();
+            if (!responseReceived) throw new Exception("Unable to receive connection update");
         } catch (Exception e) {
-            logger.warn("Unable to receive connection update", e);
+            logger.error("Unable to start server(s)", e);
             // reverse setup stage
             nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
                 node.setNodeStatus(ServerStatus.INACTIVE);
@@ -635,8 +622,7 @@ public class ECSClient implements IECSClient {
      * @param transferList list of transferObjects
      * @return
      */
-    private synchronized boolean deleteStaleRangesAndConnections(ECSHashRing<ZkECSNode> tempRing,
-                                                   List<HashRangeTransfer> transferList) {
+    private synchronized boolean deleteStaleRangesAndConnections(ECSHashRing<ZkECSNode> tempRing, List<HashRangeTransfer> transferList) {
         boolean staleRemoval = true;
         for (HashRangeTransfer transfer : transferList) {
 
@@ -697,7 +683,7 @@ public class ECSClient implements IECSClient {
                 ack = transfer.getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                         ECS_NAME,
                         KVAdminMessage.AdminStatusType.CONNECT_REPLICA,
-                        transfer.getDestinationNode().getNodeHost() + ":" + availablePort
+                        transfer.getDestinationNode().getNodeName() + ":" + transfer.getDestinationNode().getNodeHost() + ":" + availablePort
                 ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.CONNECT_REPLICA_ACK) throw new IOException();
 

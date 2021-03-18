@@ -68,9 +68,15 @@ public interface IKVStorage {
          */
         public static final String KV_DELIMITER = " ";
 
+        public final Tombstone tombstone;
         public final String key, value;
 
         public KVPair(String key, String value) {
+            this(Tombstone.VALID, key, value);
+        }
+
+        public KVPair(Tombstone tombstone, String key, String value) {
+            this.tombstone = tombstone;
             this.key = key;
             this.value = value;
         }
@@ -79,7 +85,7 @@ public interface IKVStorage {
          * @return serialized string for KVPair
          */
         public String serialize() {
-            return this.key + KV_DELIMITER + this.value;
+            return this.tombstone.marker + this.key + KV_DELIMITER + this.value;
         }
 
         /**
@@ -87,8 +93,28 @@ public interface IKVStorage {
          * @return deserialized instance of {@link KVPair} or null on failure
          */
         public static KVPair deserialize(String serialized) {
+            if (serialized == null) return null;
             final int split = serialized.indexOf(KV_DELIMITER);
-            return split < 0 ? null : new KVPair(serialized.substring(0, split), serialized.substring(split + 1));
+            return split < 0 ? null : new KVPair(
+                    Tombstone.fromChar(serialized.charAt(0)),
+                    serialized.substring(1, split),
+                    serialized.substring(split + 1)
+            );
+        }
+
+        public enum Tombstone {
+            VALID('V'),
+            DEAD('D');
+
+            final char marker;
+
+            Tombstone(char marker) {
+                this.marker = marker;
+            }
+
+            static Tombstone fromChar(char marker) {
+                return marker == VALID.marker ? VALID : DEAD;
+            }
         }
     }
 }

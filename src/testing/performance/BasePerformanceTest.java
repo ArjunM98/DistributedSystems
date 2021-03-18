@@ -5,9 +5,9 @@ import app_kvServer.IKVServer;
 import app_kvServer.storage.IKVStorage.KVPair;
 import client.KVStore;
 import junit.framework.TestCase;
-import logger.LogSetup;
-import org.apache.log4j.Level;
-import org.junit.*;
+import org.junit.After;
+import org.junit.Before;
+import org.junit.Test;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 

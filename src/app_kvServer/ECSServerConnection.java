@@ -142,7 +142,7 @@ public class ECSServerConnection {
                     handleConnect(req);
                     return;
                 case REPLICA_PORT:
-                    handlePersistentConn(req);
+                    handleReplicaPortRequest(req);
                     return;
                 default:
                     logger.info(req.getSender());
@@ -154,21 +154,28 @@ public class ECSServerConnection {
         }
     }
 
+    /**
+     * Sent to a primary server
+     */
     private void handleDisconnect(KVAdminMessageProto req) throws IOException {
         // TODO: Disconnect from server with serverName in req.getValue()
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK).getBytes());
     }
 
+    /**
+     * Sent to a primary server
+     */
     private void handleConnect(KVAdminMessageProto req) throws IOException {
-        // TODO: Connect to server at host:port in req.getValue()
+        // TODO: Connect to server at name:host:port in req.getValue()
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA_ACK).getBytes());
     }
 
-    private void handlePersistentConn(KVAdminMessageProto req) throws IOException {
+    /**
+     * Sent to a replica server
+     */
+    private void handleReplicaPortRequest(KVAdminMessageProto req) throws IOException {
         // TODO: Return an open port and listen on that port for a persistent server connection
-        ServerSocket socket = new ServerSocket(0);
-        int portNum = socket.getLocalPort();
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK, Integer.toString(portNum)).getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK, "6969").getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
