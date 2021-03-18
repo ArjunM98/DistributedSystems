@@ -14,6 +14,8 @@ import java.util.concurrent.TimeUnit;
 public class ZkECSNode extends ECSNode {
     private static final Logger logger = Logger.getRootLogger();
     private ServerStatus serverStatus;
+    private String cacheStrategy;
+    private int cacheSize;
 
     /**
      * See {@link ECSNode#fromConfig(String)}
@@ -57,6 +59,19 @@ public class ZkECSNode extends ECSNode {
      */
     public void setNodeStatus(ServerStatus status) {
         serverStatus = status;
+    }
+
+    public void setNodeCacheStrategy(String cacheStrategy) { this.cacheStrategy = cacheStrategy; }
+
+    public String getNodeCacheStrategy() { return cacheStrategy; }
+
+    public void setNodeCacheSize(int cacheSize) { this.cacheSize = cacheSize; }
+
+    public int getNodeCacheSize() { return this.cacheSize; }
+    
+    public void clearNodeCachePolicy() {
+        this.cacheSize = 0;
+        this.cacheStrategy = null;
     }
 
     /**

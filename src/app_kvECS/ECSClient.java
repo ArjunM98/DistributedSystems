@@ -233,6 +233,7 @@ public class ECSClient implements IECSClient {
                 ), 5000, TimeUnit.MILLISECONDS);
                 if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
                 server.setNodeStatus(ServerStatus.OFFLINE);
+                server.clearNodeCachePolicy();
                 hashRing.removeServer(server);
                 ECSNodeRepo.add(server);
             } catch (IOException e) {
@@ -283,6 +284,7 @@ public class ECSClient implements IECSClient {
             // reverse setup stage
             nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
                 node.setNodeStatus(ServerStatus.INACTIVE);
+                node.clearNodeCachePolicy();
                 ECSNodeRepo.add(node);
             });
             nodesToAdd = null;
@@ -298,6 +300,7 @@ public class ECSClient implements IECSClient {
             // reverse setup stage
             nodesToAdd.stream().map(ZkECSNode.class::cast).forEach(node -> {
                 node.setNodeStatus(ServerStatus.INACTIVE);
+                node.clearNodeCachePolicy();
                 ECSNodeRepo.add(node);
             });
             nodesToAdd = null;
@@ -321,6 +324,9 @@ public class ECSClient implements IECSClient {
             ZkECSNode newServer = ECSNodeRepo.poll();
             // Mark the server in an inactive state
             newServer.setNodeStatus(ServerStatus.INACTIVE);
+            // Set Cache Policies
+            newServer.setNodeCacheSize(cacheSize);
+            newServer.setNodeCacheStrategy(cacheStrategy);
             // Add the new server to the new hash ring
             newHashRing.addServer(newServer);
             // Add to list of nodes in queue to be added
@@ -399,6 +405,7 @@ public class ECSClient implements IECSClient {
                     ), 10000, TimeUnit.MILLISECONDS);
                     if (ack.getStatus() != KVAdminMessage.AdminStatusType.SHUTDOWN_ACK) throw new IOException();
                     server.setNodeStatus(ServerStatus.OFFLINE);
+                    server.clearNodeCachePolicy();
                     newHashRing.removeServer(server);
                     ECSNodeRepo.add(server);
                 } catch (IOException e) {
@@ -809,12 +816,16 @@ public class ECSClient implements IECSClient {
             removeNodeReconciliation(hashRing.deepCopy(ZkECSNode::new), serverFailed, true);
             // need to recover from an active server failure
             node.setNodeStatus(ServerStatus.OFFLINE);
+            // Get cache policy for new server, and remove previous policy before adding server back into queue
+            String cachePolicy = serverFailed.getNodeCacheStrategy();
+            int cacheSize = serverFailed.getNodeCacheSize();
+            serverFailed.clearNodeCachePolicy();
             // remove from the node pool
             hashRing.removeServer(node);
             // add to queue
             ECSNodeRepo.add(node);
             // Start up a new server
-            addNode("FIFO", 10);
+            addNode(cachePolicy, cacheSize);
             try {
                 start();
             } catch (Exception e) {
@@ -837,6 +848,8 @@ public class ECSClient implements IECSClient {
 
         // Set the state to offline
         node.setNodeStatus(ServerStatus.OFFLINE);
+        // Clear cache policies
+        node.clearNodeCachePolicy();
         // Remove the node from the current new configuration
         newHashRing.removeServer(node);
         // Add the server back to the original repository
