@@ -45,7 +45,7 @@ public class HashRangeTransfer {
     public void execute(ZooKeeperService zk) throws IOException {
         KVAdminMessageProto ack;
 
-        logger.debug("SENDING LOCK REQUEST");
+        logger.debug("Sending lock request");
         // 1. Lock server I'm sending data to
         ack = getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -54,7 +54,7 @@ public class HashRangeTransfer {
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.LOCK_ACK)
             throw new IOException("Unable to acquire lock");
 
-        logger.debug("SENDING TRANSFER REQUEST");
+        logger.debug("Sending transfer request");
         // 2. Ask for transfer port available on deleted server
         ack = getDestinationNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -64,7 +64,7 @@ public class HashRangeTransfer {
             throw new IOException("Unable to acquire port information");
         String availablePort = ack.getValue();
 
-        logger.debug("SENDING MOVE REQUEST");
+        logger.debug("Sending move request");
         // 3. Send port information and range to new server
         ack = getSourceNode().sendMessage(zk, new KVAdminMessageProto(
                 ECSClient.ECS_NAME,
@@ -75,7 +75,7 @@ public class HashRangeTransfer {
         if (ack.getStatus() != KVAdminMessage.AdminStatusType.MOVE_DATA_ACK)
             throw new IOException("Unable to initiate transfer procedure");
 
-        logger.debug("SENDING TRANSFER BEGIN(S)");
+        logger.debug("Transfer Begins");
         // 4. Initiate transfer and await progress
         final long timeout = 2;
         final TimeUnit timeUnit = TimeUnit.HOURS;
