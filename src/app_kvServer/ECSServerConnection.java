@@ -149,7 +149,7 @@ public class ECSServerConnection {
                     logger.info(server.getServerName());
                     throw new KVServerException(String.format("Bad request type: %s", req.getStatus()), KVAdminMessage.AdminStatusType.FAILED);
             }
-        } catch (KVServerException | IOException e) {
+        } catch (Exception e) {
             logger.warn(String.format("Error processing request: %s", e.getMessage()));
         }
     }
@@ -158,15 +158,17 @@ public class ECSServerConnection {
      * Sent to a primary server
      */
     private void handleDisconnect(KVAdminMessageProto req) throws IOException {
-        // TODO: Disconnect from server with serverName in req.getValue()
+        server.getBackupServerManager().disconnect(req.getValue());
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.DISCONNECT_REPLICA_ACK).getBytes());
     }
 
     /**
      * Sent to a primary server
+     * req.getValue contains name:host:port
      */
     private void handleConnect(KVAdminMessageProto req) throws IOException {
-        // TODO: Connect to server at name:host:port in req.getValue()
+        final String[] tokens = req.getValue().split(":", 3);
+        server.getBackupServerManager().connect(tokens[0], tokens[1], Integer.parseInt(tokens[2]));
         zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.CONNECT_REPLICA_ACK).getBytes());
     }
 
@@ -174,8 +176,11 @@ public class ECSServerConnection {
      * Sent to a replica server
      */
     private void handleReplicaPortRequest(KVAdminMessageProto req) throws IOException {
-        // TODO: Return an open port and listen on that port for a persistent server connection
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK, "6969").getBytes());
+        zkService.setData(zNode, new KVAdminMessageProto(
+                server.getServerName(),
+                KVAdminMessage.AdminStatusType.REPLICA_PORT_ACK,
+                String.valueOf(server.getPrimaryServerConnectionManager().getPort())
+        ).getBytes());
     }
 
     private void handleInit(KVAdminMessageProto req) throws IOException {
