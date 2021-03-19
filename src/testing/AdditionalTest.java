@@ -1,6 +1,7 @@
 package testing;
 
 import app_kvServer.IKVServer.CacheStrategy;
+import app_kvServer.KVServerException;
 import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.KVPartitionedStorage;
@@ -15,6 +16,7 @@ import shared.messages.KVMessageProto;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.assertArrayEquals;
 
@@ -160,6 +162,34 @@ public class AdditionalTest extends TestCase {
 
         // Assert only odd keys remaining
         for (int i = 0; i < 100; i++) assertEquals(i % 2 != 0, storage.inStorage("key_" + i));
+
+        storage.clearStorage();
+    }
+
+    /**
+     * Tests KVPartitionedStorage's batch retrieve functionality
+     */
+    @Test
+    public void testBatchGetStorage() {
+        final KVPartitionedStorage storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY + "/test");
+        storage.clearStorage();
+
+        // Populate storage
+        for (int i = 0; i < 100; i++) storage.putKV("key_" + i, "value_" + i);
+
+        // Get all KV pairs
+        Stream<IKVStorage.KVPair> KVs = storage.openKvStream(kv -> true);
+
+
+        // Assert stream contains all added keys
+        KVs.forEach(KV -> {
+            try {
+                assertEquals(KV.value, storage.getKV(KV.key));
+            } catch (KVServerException e) {
+                e.printStackTrace();
+            }
+        });
+
 
         storage.clearStorage();
     }

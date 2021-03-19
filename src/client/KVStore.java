@@ -133,7 +133,7 @@ public class KVStore implements KVCommInterface {
                 disconnect(server.getConnectionString(), clientSocket);
                 hashRing.removeServer(server);
             } catch (Exception e) {
-                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, "" + e.getMessage(), messageId);
             }
 
             // 3. If the request was not satisfied, (potentially) wait before trying again
@@ -169,7 +169,7 @@ public class KVStore implements KVCommInterface {
                 disconnect(server.getConnectionString(), clientSocket);
                 hashRing.removeServer(server);
             } catch (Exception e) {
-                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, e.getMessage(), messageId);
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, "" + e.getMessage(), messageId);
             }
 
             // 3. If the request was not satisfied, (potentially) wait before trying again

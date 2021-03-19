@@ -199,7 +199,7 @@ public class ECSClientCli implements Runnable {
                 0, 0),
         stop("Stop all servers that are currently running in the storage service",
                 0, 0),
-        removeNodes("Stop all servers that are currently running in the storage service",
+        removeNodes("Removes all servers that are currently running in the storage service",
                 0, Integer.MAX_VALUE, "serverName(s)"),
         getNodes("Get all servers participating within the storage service", 0, 0),
         getKeyNode("Get the server responsible for the specified key", 0, 1, "key"),
