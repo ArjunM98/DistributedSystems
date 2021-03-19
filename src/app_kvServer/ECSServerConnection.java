@@ -208,9 +208,9 @@ public class ECSServerConnection {
     }
 
     private void handleShutdown() throws IOException {
-        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
         server.updateServerState(State.STOPPED);
         server.clearStorage();
+        zkService.setData(zNode, new KVAdminMessageProto(server.getServerName(), KVAdminMessage.AdminStatusType.SHUTDOWN_ACK).getBytes());
         server.close();
     }
 

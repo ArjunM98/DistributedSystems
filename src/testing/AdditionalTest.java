@@ -1,6 +1,8 @@
 package testing;
 
+import app_kvECS.ECSClient;
 import app_kvServer.IKVServer.CacheStrategy;
+import app_kvServer.KVServerException;
 import app_kvServer.cache.IKVCache;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.KVPartitionedStorage;
@@ -9,12 +11,14 @@ import ecs.ECSHashRing;
 import ecs.ECSNode;
 import junit.framework.TestCase;
 import org.junit.Test;
+import shared.ObjectFactory;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
+import java.util.stream.Stream;
 
 import static org.junit.Assert.assertArrayEquals;
 
@@ -22,10 +26,12 @@ public class AdditionalTest extends TestCase {
 
     private KVStore kvClient;
     private KVStore kvClientAddition;
+    private ECSClient ecsClient;
 
 
     public void setUp() {
         kvClient = new KVStore("localhost", 50000);
+        ecsClient = (ECSClient) ObjectFactory.createECSClientObject("ecs.config", "localhost:2181");
         kvClientAddition = new KVStore("localhost", 50000);
         try {
             kvClient.connect();
@@ -36,6 +42,7 @@ public class AdditionalTest extends TestCase {
 
     public void tearDown() {
         kvClient.disconnect();
+        ecsClient.shutdown();
     }
 
     /**
@@ -160,6 +167,34 @@ public class AdditionalTest extends TestCase {
 
         // Assert only odd keys remaining
         for (int i = 0; i < 100; i++) assertEquals(i % 2 != 0, storage.inStorage("key_" + i));
+
+        storage.clearStorage();
+    }
+
+    /**
+     * Tests KVPartitionedStorage's batch retrieve functionality
+     */
+    @Test
+    public void testBatchGetStorage() {
+        final KVPartitionedStorage storage = new KVPartitionedStorage(IKVStorage.STORAGE_ROOT_DIRECTORY + "/test");
+        storage.clearStorage();
+
+        // Populate storage
+        for (int i = 0; i < 100; i++) storage.putKV("key_" + i, "value_" + i);
+
+        // Get all KV pairs
+        Stream<IKVStorage.KVPair> KVs = storage.openKvStream(kv -> true);
+
+
+        // Assert stream contains all added keys
+        KVs.forEach(KV -> {
+            try {
+                assertEquals(KV.value, storage.getKV(KV.key));
+            } catch (KVServerException e) {
+                e.printStackTrace();
+            }
+        });
+
 
         storage.clearStorage();
     }
