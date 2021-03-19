@@ -1,6 +1,5 @@
 package testing;
 
-import app_kvECS.ECSClient;
 import app_kvServer.IKVServer.CacheStrategy;
 import app_kvServer.KVServerException;
 import app_kvServer.cache.IKVCache;
@@ -11,7 +10,6 @@ import ecs.ECSHashRing;
 import ecs.ECSNode;
 import junit.framework.TestCase;
 import org.junit.Test;
-import shared.ObjectFactory;
 import shared.messages.KVMessage;
 import shared.messages.KVMessageProto;
 
@@ -26,12 +24,10 @@ public class AdditionalTest extends TestCase {
 
     private KVStore kvClient;
     private KVStore kvClientAddition;
-    private ECSClient ecsClient;
 
 
     public void setUp() {
         kvClient = new KVStore("localhost", 50000);
-        ecsClient = (ECSClient) ObjectFactory.createECSClientObject("ecs.config", "localhost:2181");
         kvClientAddition = new KVStore("localhost", 50000);
         try {
             kvClient.connect();
@@ -42,7 +38,6 @@ public class AdditionalTest extends TestCase {
 
     public void tearDown() {
         kvClient.disconnect();
-        ecsClient.shutdown();
     }
 
     /**
