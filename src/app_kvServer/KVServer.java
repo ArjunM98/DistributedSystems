@@ -1,6 +1,8 @@
 package app_kvServer;
 
 import app_kvServer.cache.IKVCache;
+import app_kvServer.replication.BackupServersConnectionManager;
+import app_kvServer.replication.PrimaryServerConnectionManager;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
@@ -39,6 +41,9 @@ public class KVServer extends Thread implements IKVServer {
     private ServerSocket serverSocket;
     private ECSServerConnection.State state;
     private final ECSServerConnection ecsServerConnection;
+
+    private BackupServersConnectionManager backupServersConnectionManager;
+    private PrimaryServerConnectionManager primaryServerConnectionManager;
 
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
@@ -130,7 +135,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        if (!this.ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
+        if (!this.ecsServerConnection.isResponsibleForKey(key, true)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
@@ -166,7 +171,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        if (!ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
+        if (!ecsServerConnection.isResponsibleForKey(key, false)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
@@ -176,6 +181,8 @@ public class KVServer extends Thread implements IKVServer {
             // and instead have to read from storage which is protected by a lock
             cache.delete(key);
             storage.delete(key);
+
+            backupServersConnectionManager.replicate(new KVPair(KVPair.Tombstone.DEAD, key, ""));
         } catch (KVServerException e) {
             throw e;
         } catch (Exception e) {
@@ -183,9 +190,10 @@ public class KVServer extends Thread implements IKVServer {
         }
         else try {
             // Store BEFORE caching in case of any failures
-            logger.info("Trying to put value");
             storage.putKV(key, value);
             cache.putKV(key, value);
+
+            backupServersConnectionManager.replicate(new KVPair(KVPair.Tombstone.VALID, key, value));
         } catch (KVServerException e) {
             throw e;
         } catch (Exception e) {
@@ -211,6 +219,10 @@ public class KVServer extends Thread implements IKVServer {
         try {
             serverSocket = new ServerSocket(port);
             logger.info("Bound to port " + port);
+
+            primaryServerConnectionManager = new PrimaryServerConnectionManager(this);
+            backupServersConnectionManager = new BackupServersConnectionManager();
+
             this.isRunning.set(true);
         } catch (IOException e) {
             logger.error("Error! Cannot open server socket:");
@@ -268,6 +280,18 @@ public class KVServer extends Thread implements IKVServer {
             } catch (Exception e) {
                 logger.error("Unable to cleanly terminate ECS connection", e);
             }
+
+            try {
+                primaryServerConnectionManager.close();
+            } catch (Exception e) {
+                logger.error("Unable to cleanly terminate replica (get) connection", e);
+            }
+
+            try {
+                backupServersConnectionManager.close();
+            } catch (Exception e) {
+                logger.error("Unable to cleanly terminate replica (send) connection", e);
+            }
         } else {
             logger.info(String.format("Second call: %d", java.lang.Thread.activeCount()));
             logger.warn("Server already closed");
@@ -314,6 +338,40 @@ public class KVServer extends Thread implements IKVServer {
     public void deleteIf(Predicate<KVPair> filter) {
         storage.deleteIf(filter);
         cache.clearCache(); // expensive af but much simpler than actually pruning cache
+    }
+
+    /**
+     * @return replica outbound connections manager
+     */
+    public BackupServersConnectionManager getBackupServerManager() {
+        return this.backupServersConnectionManager;
+    }
+
+    /**
+     * @return replica inbound connections manager
+     */
+    public PrimaryServerConnectionManager getPrimaryServerConnectionManager() {
+        return this.primaryServerConnectionManager;
+    }
+
+    /**
+     * Perform a KV ingestion operation without checking for hash range, lock, etc.
+     *
+     * @param kv from a coordinator server that this is a replica of
+     */
+    public void forceIngestKV(KVPair kv) {
+        try {
+            switch (kv.tombstone) {
+                case VALID:
+                    storage.putKV(kv.key, kv.value);
+                    break;
+                case DEAD:
+                    storage.delete(kv.key);
+                    break;
+            }
+        } catch (KVServerException e) {
+            logger.info(String.format("Error ingesting kv '%s'", kv.key));
+        }
     }
 
     /**
