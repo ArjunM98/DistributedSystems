@@ -76,8 +76,15 @@ public class ECSServerConnection {
         return this.allEcsNodes.toConfig();
     }
 
-    public ECSNode getEcsNode() {
-        return allEcsNodes.getNodeByName(server.getServerName());
+    public boolean isResponsibleForKey(String key, boolean considerSuccessors) {
+        final ECSNode myNode = allEcsNodes.getNodeByName(server.getServerName());
+        if (considerSuccessors) {
+            return myNode.isResponsibleForKey(key)
+                    || allEcsNodes.getNthSuccessor(myNode, 1, false).isResponsibleForKey(key)
+                    || allEcsNodes.getNthSuccessor(myNode, 2, false).isResponsibleForKey(key);
+        } else {
+            return myNode.isResponsibleForKey(key);
+        }
     }
 
     private void handleMetadataUpdate(byte[] input) {

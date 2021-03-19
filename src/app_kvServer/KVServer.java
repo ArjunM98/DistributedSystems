@@ -135,7 +135,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        if (!this.ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
+        if (!this.ecsServerConnection.isResponsibleForKey(key, true)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
@@ -171,7 +171,7 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        if (!ecsServerConnection.getEcsNode().isResponsibleForKey(key)) {
+        if (!ecsServerConnection.isResponsibleForKey(key, false)) {
             throw new KVServerException(String.format("Server not responsible for key '%s'", key), KVMessage.StatusType.SERVER_NOT_RESPONSIBLE);
         }
 
