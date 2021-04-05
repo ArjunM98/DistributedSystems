@@ -46,6 +46,7 @@ public class ECSTests extends TestCase {
         ecs.shutdown();
         Thread.sleep(5000);
     }
+
     /**
      * Testing the send message protocol by mimicking a mock server
      *
@@ -256,7 +257,7 @@ public class ECSTests extends TestCase {
         assertTrue(zk.nodeExists(ZooKeeperService.ZK_SERVERS + "/" + node.getNodeName()));
         CountDownLatch latch = new CountDownLatch(1);
         zk.watchDeletion(ZooKeeperService.ZK_SERVERS + "/" + node.getNodeName(), latch::countDown);
-        String script = "pkill -9 -f m2-server.jar";
+        String script = "pkill -9 -f m4-server.jar";
         script = "ssh -n " + node.getNodeHost() + " nohup " + script + " &";
         Runtime run = Runtime.getRuntime();
         run.exec(script);

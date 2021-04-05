@@ -26,7 +26,7 @@ import static ecs.ZkECSNode.ServerStatus;
 
 public class ECSClient implements IECSClient {
     public static final String ECS_NAME = "ECS";
-    public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m2-server.jar").toString();
+    public static final String SERVER_JAR = new File(System.getProperty("user.dir"), "m4-server.jar").toString();
     public static final String PUBLIC_ZK_CONN = Utilities.getHostname() + ":2181";
     private static final Logger logger = Logger.getRootLogger();
     /* Zookeeper Client Instance */
