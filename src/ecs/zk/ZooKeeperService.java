@@ -3,6 +3,7 @@ package ecs.zk;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
+import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
 import java.io.IOException;
@@ -51,6 +52,21 @@ public class ZooKeeperService {
             THREAD_POOL.shutdownNow();
         } catch (InterruptedException e) {
             throw new IOException("Unable to close ZooKeeper connection");
+        }
+    }
+
+    /**
+     * Initialize {@link #ZK_SERVERS}, {@link #ZK_METADATA} if not already present
+     *
+     * @param sender usually {@link app_kvECS.ECSClient#ECS_NAME}
+     * @throws IOException
+     */
+    public void initializeRootNodesForEcs(String sender) throws IOException {
+        if (!nodeExists(ZooKeeperService.ZK_SERVERS)) {
+            createNode(ZooKeeperService.ZK_SERVERS, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
+        }
+        if (!nodeExists(ZooKeeperService.ZK_METADATA)) {
+            createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
         }
     }
 

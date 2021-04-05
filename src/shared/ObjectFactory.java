@@ -31,7 +31,9 @@ public final class ObjectFactory {
     public static IKVServer createKVServerObject(int port, int cacheSize, String strategy) {
         logger.warn("Note: this method is not M2-compliant, please use the other one. This doesn't play well with ZK.");
         try {
-            new ZooKeeperService(ZooKeeperService.LOCALHOST_CONNSTR).setData(ZooKeeperService.ZK_METADATA, ECSHashRing.fromConfig(
+            final ZooKeeperService zk = new ZooKeeperService(ZooKeeperService.LOCALHOST_CONNSTR);
+            zk.initializeRootNodesForEcs(ECSClient.ECS_NAME);
+            zk.setData(ZooKeeperService.ZK_METADATA, ECSHashRing.fromConfig(
                     String.format("test localhost %d", port), ECSNode::fromConfig
             ).toConfig().getBytes(StandardCharsets.UTF_8));
             final KVServer server = new KVServer(port, "test", ZooKeeperService.LOCALHOST_CONNSTR, cacheSize, strategy);

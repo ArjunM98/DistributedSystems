@@ -66,12 +66,7 @@ public class ECSClient implements IECSClient {
         zk = new ZooKeeperService(zooKeeperConnectionString);
 
         // Establish root nodes
-        if (!zk.nodeExists(ZooKeeperService.ZK_SERVERS)) {
-            zk.createNode(ZooKeeperService.ZK_SERVERS, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
-        }
-        if (!zk.nodeExists(ZooKeeperService.ZK_METADATA)) {
-            zk.createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
-        }
+        zk.initializeRootNodesForEcs(ECS_NAME);
 
         // Set up watch on the children of root
         zk.watchChildrenForever(ZooKeeperService.ZK_SERVERS, this::initializeNewServer);
