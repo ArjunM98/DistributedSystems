@@ -377,9 +377,10 @@ public class KVServer extends Thread implements IKVServer {
     /**
      * Main entry point for the KVServer application.
      *
-     * @param args contains [portNumber [, cacheSize, policy, logLevel]]
+     * @param args contains [portNumber, name, zkConn [, cacheSize, policy, logLevel]]
      */
     public static void main(String[] args) {
+        // 0. Default args
         int portNumber, cacheSize = 10;
         String name;
         String connectionString;
@@ -393,7 +394,7 @@ public class KVServer extends Thread implements IKVServer {
                     String candidateLevel = args[5].toUpperCase();
                     if (!LogSetup.isValidLevel(candidateLevel))
                         throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
-                    logLevel = Level.toLevel(candidateLevel, Level.ALL);
+                    logLevel = Level.toLevel(candidateLevel, logLevel);
                 case 5:
                     String candidatePolicy = args[4].toUpperCase();
                     if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))

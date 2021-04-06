@@ -11,19 +11,24 @@
     <property name="lib.dir" value="libs"/>
 
     <!-- Configuration for client application -->
-    <property name="clientjar.file" value="m2-client.jar"/>
+    <property name="clientjar.file" value="m4-client.jar"/>
     <property name="clientmanifest.file" value="CLIENT_MANIFEST.MF"/>
     <property name="clientmain.class" value="app_kvClient.KVClient"/>
 
     <!-- Configuration for server application -->
-    <property name="serverjar.file" value="m2-server.jar"/>
+    <property name="serverjar.file" value="m4-server.jar"/>
     <property name="servermanifest.file" value="SERVER_MANIFEST.MF"/>
     <property name="servermain.class" value="app_kvServer.KVServer"/>
 
     <!-- Configuration for ecs application -->
-    <property name="ecsjar.file" value="m2-ecs.jar"/>
+    <property name="ecsjar.file" value="m4-ecs.jar"/>
     <property name="ecsmanifest.file" value="ECS_MANIFEST.MF"/>
     <property name="ecsmain.class" value="app_kvECS.ECSClient"/>
+
+    <!-- Configuration for http application -->
+    <property name="httpjar.file" value="m4-http.jar"/>
+    <property name="httpmanifest.file" value="HTTP_MANIFEST.MF"/>
+    <property name="httpmain.class" value="app_kvHttp.KVHttpService"/>
 
     <!-- path to libraries-->
     <path id="external.jars">
@@ -58,6 +63,10 @@
         <delete file="${clientmanifest.file}"/>
         <delete file="${serverjar.file}"/>
         <delete file="${servermanifest.file}"/>
+        <delete file="${ecsjar.file}" />
+        <delete file="${ecsmanifest.file}" />
+        <delete file="${httpjar.file}" />
+        <delete file="${httpmanifest.file}" />
     </target>
 
     <target name="cleanall" depends="clean"/>
@@ -126,8 +135,26 @@
         </jar>
     </target>
 
+    <!-- build ecs jar -->
+    <target name="build-http-jar" depends="build">
+        <delete file="${httpjar.file}"/>
+        <delete file="${httpmanifest.file}"/>
+
+        <manifest file="${httpmanifest.file}">
+            <attribute name="built-by" value="${user.name}"/>
+            <attribute name="Main-Class" value="${httpmain.class}"/>
+            <attribute name="Class-Path" value="${project.classpath}"/>
+        </manifest>
+
+        <jar destfile="${httpjar.file}" basedir="${build.dir}"
+             manifest="${httpmanifest.file}">
+            <fileset dir="${build.dir}" includes="**/*.class"/>
+            <zipgroupfileset dir="${lib.dir}" includes="**/*.jar"/>
+        </jar>
+    </target>
+
     <!-- generate separate jar files for client and server application -->
-    <target name="build-jar" depends="build-client-jar, build-server-jar, build-ecs-jar"/>
+    <target name="build-jar" depends="build-client-jar, build-server-jar, build-ecs-jar, build-http-jar"/>
 
     <!-- run test cases -->
     <target name="test" depends="build">
@@ -147,6 +174,7 @@
         </junit>
     </target>
 
+    <!-- run ecs integration test cases -->
     <target name="ecsTest" depends="build">
         <junit>
             <classpath refid="project.classpath"/>
