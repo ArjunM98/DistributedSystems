@@ -1,13 +1,69 @@
 package app_kvHttp;
 
+import com.sun.net.httpserver.HttpServer;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class KVHttpService {
     private static final Logger logger = Logger.getRootLogger();
+
+    private static final int NUM_WORKERS = 16;
+
+    private final HttpServer httpServer;
+    private final ExecutorService httpWorkers;
+
+    /**
+     * Create an HTTP service for the M4 extension
+     *
+     * @param port             to listen for HTTP connections on
+     * @param connectionString to watch for ECS changes on
+     */
+    public KVHttpService(int port, String connectionString) {
+        // 1. Initialize ZooKeeper connection
+        logger.warn("HTTP Server stub not implemented. Missing ZK");
+
+        // 2. Spin up HTTP server
+        try {
+            this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);
+            this.httpServer.createContext("/", exchange -> {
+                logger.info("Received request " + exchange);
+                final byte[] responseContent = "hello".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, responseContent.length);
+                try (final OutputStream response = exchange.getResponseBody()) {
+                    response.write(responseContent);
+                }
+            });
+            this.httpServer.setExecutor(this.httpWorkers = Executors.newFixedThreadPool(NUM_WORKERS));
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to create HTTP server", e);
+        }
+        this.httpServer.start();
+        logger.info("HTTP service started");
+        logger.info("portNumber = " + port);
+        logger.info("connectionString = " + connectionString);
+    }
+
+    public void close() {
+        try {
+            this.httpWorkers.shutdownNow();
+        } catch (Exception e) {
+            logger.error("Unable to cleanly terminate threads", e);
+        }
+
+        try {
+            this.httpServer.stop(5);
+        } catch (Exception e) {
+            logger.error("Unable to terminate server", e);
+        }
+    }
 
     /**
      * Main entry point for the KVHttpService application.
@@ -55,10 +111,8 @@ public class KVHttpService {
             return;
         }
 
-        // TODO: 3. Run server and respond to ctrl-c and kill
-        logger.error("HTTP Server stub not implemented. Would have started with:");
-        logger.error("portNumber = " + portNumber);
-        logger.error("connectionString = " + connectionString);
-        logger.error("logLevel = " + logLevel);
+        // 3. Run server and respond to ctrl-c and kill
+        final KVHttpService kvHttpService = new KVHttpService(portNumber, connectionString);
+        Runtime.getRuntime().addShutdownHook(new Thread(kvHttpService::close));
     }
 }
