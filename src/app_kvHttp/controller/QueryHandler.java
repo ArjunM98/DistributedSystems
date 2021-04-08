@@ -9,16 +9,18 @@ import com.sun.net.httpserver.HttpExchange;
 import org.apache.log4j.Logger;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 public class QueryHandler extends Handler {
     private static final Logger logger = Logger.getRootLogger();
     public static final String PATH_PREFIX = "/api/query";
+    private static final Pattern PATH_PREFIX_PATTERN = Pattern.compile("/*api/query/*");
 
     @Override
     protected ApiResponse execute(HttpExchange exchange) throws Exception {
         final String httpMethod = exchange.getRequestMethod();
         if ("POST".equalsIgnoreCase(httpMethod)) {
-            final String operation = exchange.getRequestURI().getPath().substring(PATH_PREFIX.length()).replaceFirst("/", "");
+            final String operation = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("").split("/")[0];
             switch (operation.toUpperCase()) {
                 case "GET":
                     return executeGet(exchange);
