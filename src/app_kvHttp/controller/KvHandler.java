@@ -1,15 +1,21 @@
 package app_kvHttp.controller;
 
+import client.KVStore;
+import client.KVStorePool;
 import com.sun.net.httpserver.HttpExchange;
-import org.apache.log4j.Logger;
 
-import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 public class KvHandler extends Handler {
-    private static final Logger logger = Logger.getRootLogger();
     public static final String PATH_PREFIX = "/api/kv";
     private static final Pattern PATH_PREFIX_PATTERN = Pattern.compile("/*api/kv/*");
+
+    private final KVStorePool kvStorePool;
+
+    public KvHandler(KVStorePool kvStorePool) {
+        this.kvStorePool = kvStorePool;
+    }
 
     @Override
     protected ApiResponse execute(HttpExchange exchange) throws Exception {
@@ -29,31 +35,40 @@ public class KvHandler extends Handler {
     /**
      * /api/kv/{key}
      */
-    private ApiResponse executeGet(HttpExchange exchange) {
+    private ApiResponse executeGet(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
-        logger.info("Would get: " + key);
-        // TODO: KVStore.get(key)
-        return null;
+        final KVStore kvStore = kvStorePool.acquireResource(10, TimeUnit.SECONDS);
+        try {
+            return ApiResponse.fromKVMessage(kvStore.get(key));
+        } finally {
+            kvStorePool.releaseResource(kvStore);
+        }
     }
 
     /**
      * /api/kv/{key}
      */
-    private ApiResponse executeDelete(HttpExchange exchange) {
+    private ApiResponse executeDelete(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
-        logger.info("Would delete: " + key);
-        // TODO: KVStore.put(key, null)
-        return null;
+        final KVStore kvStore = kvStorePool.acquireResource(10, TimeUnit.SECONDS);
+        try {
+            return ApiResponse.fromKVMessage(kvStore.put(key, null));
+        } finally {
+            kvStorePool.releaseResource(kvStore);
+        }
     }
 
     /**
      * /api/kv/{key}
      */
-    private ApiResponse executePut(HttpExchange exchange) throws IOException {
+    private ApiResponse executePut(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
         final String value = new String(exchange.getRequestBody().readAllBytes());
-        logger.info("Would put: " + key + " / " + value);
-        // TODO: KVStore.put(key, value)
-        return null;
+        final KVStore kvStore = kvStorePool.acquireResource(10, TimeUnit.SECONDS);
+        try {
+            return ApiResponse.fromKVMessage(kvStore.put(key, value));
+        } finally {
+            kvStorePool.releaseResource(kvStore);
+        }
     }
 }

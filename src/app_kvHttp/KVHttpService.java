@@ -3,7 +3,9 @@ package app_kvHttp;
 import app_kvHttp.controller.Handler;
 import app_kvHttp.controller.KvHandler;
 import app_kvHttp.controller.QueryHandler;
+import client.KVStorePool;
 import com.sun.net.httpserver.HttpServer;
+import ecs.zk.ZooKeeperService;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -20,6 +22,8 @@ public class KVHttpService {
 
     private final HttpServer httpServer;
     private final ExecutorService httpWorkers;
+    private final ZooKeeperService zk;
+    private final KVStorePool kvStorePool;
 
     /**
      * Create an HTTP service for the M4 extension
@@ -29,15 +33,25 @@ public class KVHttpService {
      */
     public KVHttpService(int port, String connectionString) {
         // 1. Initialize ZooKeeper connection
-        logger.warn("HTTP Server stub not implemented. Missing ZK");
+        try {
+            // First establish connections
+            this.zk = new ZooKeeperService(connectionString);
+            this.kvStorePool = new KVStorePool(NUM_WORKERS);
+
+            // Then preemptively fetch metadata information
+            this.kvStorePool.updateMetadata(this.zk.getData(ZooKeeperService.ZK_METADATA));
+            this.zk.watchDataForever(ZooKeeperService.ZK_METADATA, kvStorePool::updateMetadata);
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to connect to KV Service", e);
+        }
 
         // 2. Spin up HTTP server
         try {
             this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);
             this.httpServer.setExecutor(this.httpWorkers = Executors.newFixedThreadPool(NUM_WORKERS));
             this.httpServer.createContext("/", new Handler.NotFoundHandler());
-            this.httpServer.createContext(KvHandler.PATH_PREFIX, new KvHandler());
-            this.httpServer.createContext(QueryHandler.PATH_PREFIX, new QueryHandler());
+            this.httpServer.createContext(KvHandler.PATH_PREFIX, new KvHandler(this.kvStorePool));
+            this.httpServer.createContext(QueryHandler.PATH_PREFIX, new QueryHandler(this.kvStorePool));
         } catch (IOException e) {
             throw new RuntimeException("Unable to create HTTP server", e);
         }
@@ -61,6 +75,19 @@ public class KVHttpService {
         } catch (Exception e) {
             logger.error("Unable to terminate server", e);
         }
+
+        try {
+            zk.close();
+        } catch (Exception e) {
+            logger.error("Unable to cleanly terminate ZooKeeper connection", e);
+        }
+
+        try {
+            kvStorePool.close();
+        } catch (Exception e) {
+            logger.error("Unable to cleanly terminate KV service connections", e);
+        }
+
     }
 
     /**

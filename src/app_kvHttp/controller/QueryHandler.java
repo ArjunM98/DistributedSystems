@@ -5,6 +5,7 @@ import app_kvHttp.model.request.BodySelect;
 import app_kvHttp.model.request.BodyUpdate;
 import app_kvHttp.model.request.Query;
 import app_kvHttp.model.request.Remapping;
+import client.KVStorePool;
 import com.sun.net.httpserver.HttpExchange;
 import org.apache.log4j.Logger;
 
@@ -15,6 +16,12 @@ public class QueryHandler extends Handler {
     private static final Logger logger = Logger.getRootLogger();
     public static final String PATH_PREFIX = "/api/query";
     private static final Pattern PATH_PREFIX_PATTERN = Pattern.compile("/*api/query/*");
+
+    private final KVStorePool kvStorePool;
+
+    public QueryHandler(KVStorePool kvStorePool) {
+        this.kvStorePool = kvStorePool;
+    }
 
     @Override
     protected ApiResponse execute(HttpExchange exchange) throws Exception {

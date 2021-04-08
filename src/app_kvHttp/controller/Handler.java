@@ -1,6 +1,7 @@
 package app_kvHttp.controller;
 
 import app_kvHttp.model.Model;
+import app_kvHttp.model.response.KV;
 import app_kvHttp.model.response.Status;
 import com.fasterxml.jackson.core.JacksonException;
 import com.sun.net.httpserver.HttpExchange;
@@ -13,6 +14,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.nio.charset.Charset;
 import java.util.Objects;
+
+import static shared.messages.KVMessageProto.CLIENT_ERROR_KEY;
 
 public abstract class Handler implements HttpHandler {
     private static final Logger logger = Logger.getRootLogger();
@@ -88,6 +91,34 @@ public abstract class Handler implements HttpHandler {
         static ApiResponse serverError(Object... message) {
             final Object details = (message == null || message.length < 1) ? SERVER_ERROR_DEFAULT_MESSAGE : message[0];
             return ApiResponse.of(HttpURLConnection.HTTP_INTERNAL_ERROR, new Status(KVMessage.StatusType.FAILED, details));
+        }
+
+        static ApiResponse fromKVMessage(KVMessage kvMessage) {
+            final Status status = new Status(kvMessage.getStatus(), kvMessage.getValue());
+            switch (status.getStatus()) {
+                case GET_SUCCESS:
+                case PUT_UPDATE:
+                case DELETE_SUCCESS:
+                    // 200
+                    return ApiResponse.of(HttpURLConnection.HTTP_OK, new KV(kvMessage.getKey(), kvMessage.getValue()));
+                case PUT_SUCCESS:
+                    // 201
+                    return ApiResponse.of(HttpURLConnection.HTTP_CREATED, new KV(kvMessage.getKey(), kvMessage.getValue()));
+                case GET_ERROR:
+                case PUT_ERROR:
+                case DELETE_ERROR:
+                    // 404
+                    return ApiResponse.of(HttpURLConnection.HTTP_NOT_FOUND, status);
+                case FAILED:
+                    // 400 or 500
+                    if (CLIENT_ERROR_KEY.equals(kvMessage.getKey())) return ApiResponse.badRequest(status.getMessage());
+                    else return ApiResponse.serverError(status.getMessage());
+                case SERVER_WRITE_LOCK:
+                case SERVER_STOPPED:
+                    // 503
+                    return ApiResponse.of(HttpURLConnection.HTTP_UNAVAILABLE, status);
+            }
+            return ApiResponse.serverError();
         }
     }
 
