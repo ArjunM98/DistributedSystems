@@ -334,9 +334,12 @@ components:
     Remapping:
       type: object
       properties:
-        value:
+        find:
           type: string
-          description: Fixed new value to replace all matches with.
+          description: Regex to find substrings to replace for the update.
+        replace:
+          type: string
+          description: Replacement string used by regex. Can leverage capture groups.
       xml:
         name: Remapping
     BodySelect:
