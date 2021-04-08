@@ -1,8 +1,8 @@
 package app_kvHttp.model.response;
 
+import app_kvHttp.model.Model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import shared.messages.KVMessage;
 
 import java.util.Map;
@@ -11,7 +11,7 @@ import java.util.Map;
  * See {@link app_kvServer.storage.IKVStorage.KVPair}
  */
 @SuppressWarnings("unused")
-public class KV {
+public class KV extends Model {
     private final String key;
     private final String value;
 
@@ -52,17 +52,15 @@ public class KV {
      * De/Serialization test
      */
     public static void main(String[] args) throws Exception {
-        final ObjectMapper objectMapper = new ObjectMapper();
-
         // 1. Generate test case
-        final String json = objectMapper.writeValueAsString(Map.of("key", "key_1"));
+        final String json = Model.toString(Map.of("key", "key_1"));
         System.out.println("test = " + json);
 
         // 2. Deserialize from JSON
-        final KV obj = objectMapper.readValue(json, KV.class);
+        final KV obj = Model.fromString(json, KV.class);
         System.out.println("serialized = " + obj);
 
         // 3. Serialize into JSON
-        System.out.println("deserialized = " + objectMapper.writeValueAsString(obj));
+        System.out.println("deserialized = " + Model.toString(obj));
     }
 }

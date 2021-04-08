@@ -1,8 +1,8 @@
 package app_kvHttp.model.response;
 
+import app_kvHttp.model.Model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import shared.messages.KVMessage.StatusType;
 
 import java.util.Map;
@@ -11,7 +11,7 @@ import java.util.Map;
  * See {@link StatusType}
  */
 @SuppressWarnings("unused")
-public class Status {
+public class Status extends Model {
     private final StatusType status;
 
     /**
@@ -40,17 +40,15 @@ public class Status {
      * De/Serialization test
      */
     public static void main(String[] args) throws Exception {
-        final ObjectMapper objectMapper = new ObjectMapper();
-
         // 1. Generate test case
-        final String json = objectMapper.writeValueAsString(Map.of("status", "SERVER_STOPPED"));
+        final String json = Model.toString(Map.of("status", "SERVER_STOPPED"));
         System.out.println("test = " + json);
 
         // 2. Deserialize from JSON
-        final Status obj = objectMapper.readValue(json, Status.class);
+        final Status obj = Model.fromString(json, Status.class);
         System.out.println("serialized = " + obj);
 
         // 3. Serialize into JSON
-        System.out.println("deserialized = " + objectMapper.writeValueAsString(obj));
+        System.out.println("deserialized = " + Model.toString(obj));
     }
 }

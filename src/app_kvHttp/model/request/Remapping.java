@@ -1,13 +1,13 @@
 package app_kvHttp.model.request;
 
+import app_kvHttp.model.Model;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Map;
 
 @SuppressWarnings("unused")
-public class Remapping {
+public class Remapping extends Model {
     private final String value;
 
     /**
@@ -29,17 +29,15 @@ public class Remapping {
      * De/Serialization test
      */
     public static void main(String[] args) throws Exception {
-        final ObjectMapper objectMapper = new ObjectMapper();
-
         // 1. Generate test case
-        final String json = objectMapper.writeValueAsString(Map.of("value", "new_value"));
+        final String json = Model.toString(Map.of("value", "new_value"));
         System.out.println("test = " + json);
 
         // 2. Deserialize from JSON
-        final Remapping obj = objectMapper.readValue(json, Remapping.class);
+        final Remapping obj = Model.fromString(json, Remapping.class);
         System.out.println("serialized = " + obj);
 
         // 3. Serialize into JSON
-        System.out.println("deserialized = " + objectMapper.writeValueAsString(obj));
+        System.out.println("deserialized = " + Model.toString(obj));
     }
 }

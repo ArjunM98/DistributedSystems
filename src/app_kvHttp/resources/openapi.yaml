@@ -339,11 +339,6 @@ components:
     BodySelect:
       type: object
       properties:
-        max_results:
-          type: integer
-          format: int32
-          default: -1
-          description: 'Max number of results to return if positive, else return all'
         filter:
           $ref: '#/components/schemas/Query'
       xml:
@@ -351,11 +346,6 @@ components:
     BodyUpdate:
       type: object
       properties:
-        max_results:
-          type: integer
-          format: int32
-          default: -1
-          description: 'Max number of results to return if positive, else return all'
         filter:
           $ref: '#/components/schemas/Query'
         mapping:

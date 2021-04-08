@@ -1,14 +1,14 @@
 package app_kvHttp;
 
+import app_kvHttp.controller.KvHandler;
+import app_kvHttp.controller.QueryHandler;
 import com.sun.net.httpserver.HttpServer;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 
 import java.io.IOException;
-import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -33,15 +33,9 @@ public class KVHttpService {
         // 2. Spin up HTTP server
         try {
             this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);
-            this.httpServer.createContext("/", exchange -> {
-                logger.info("Received request " + exchange);
-                final byte[] responseContent = "hello".getBytes(StandardCharsets.UTF_8);
-                exchange.sendResponseHeaders(200, responseContent.length);
-                try (final OutputStream response = exchange.getResponseBody()) {
-                    response.write(responseContent);
-                }
-            });
             this.httpServer.setExecutor(this.httpWorkers = Executors.newFixedThreadPool(NUM_WORKERS));
+            this.httpServer.createContext(KvHandler.PATH_PREFIX, new KvHandler());
+            this.httpServer.createContext(QueryHandler.PATH_PREFIX, new QueryHandler());
         } catch (IOException e) {
             throw new RuntimeException("Unable to create HTTP server", e);
         }
@@ -52,6 +46,8 @@ public class KVHttpService {
     }
 
     public void close() {
+        logger.info("Terminating KVHttpService...");
+
         try {
             this.httpWorkers.shutdownNow();
         } catch (Exception e) {
