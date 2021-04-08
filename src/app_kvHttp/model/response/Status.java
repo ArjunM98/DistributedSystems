@@ -13,20 +13,25 @@ import java.util.Map;
 @SuppressWarnings("unused")
 public class Status extends Model {
     private final StatusType status;
+    private final String message;
 
     /**
      * JSON deserializer hook for Jackson
      */
     @JsonCreator
-    public Status(@JsonProperty(value = "status", required = true) String status) {
-        this(StatusType.valueOf(status));
+    public Status(
+            @JsonProperty(value = "status", required = true) String status,
+            @JsonProperty(value = "message") String message
+    ) {
+        this(StatusType.valueOf(status), message);
     }
 
     /**
      * Constructor for response building
      */
-    public Status(StatusType status) {
+    public Status(StatusType status, Object message) {
         this.status = status;
+        this.message = message == null ? String.format("StatusType.%s", status.toString()) : String.valueOf(message);
     }
 
     /**
@@ -34,6 +39,13 @@ public class Status extends Model {
      */
     public StatusType getStatus() {
         return status;
+    }
+
+    /**
+     * Getter required for JSON serialization
+     */
+    public String getMessage() {
+        return message;
     }
 
     /**

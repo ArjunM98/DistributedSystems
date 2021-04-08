@@ -315,6 +315,9 @@ components:
         status:
           type: string
           description: KVMessage.StatusType
+        message:
+          type: string
+          description: Additional details
       xml:
         name: StatusType
     Query:

@@ -1,5 +1,6 @@
 package app_kvHttp;
 
+import app_kvHttp.controller.Handler;
 import app_kvHttp.controller.KvHandler;
 import app_kvHttp.controller.QueryHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -34,6 +35,7 @@ public class KVHttpService {
         try {
             this.httpServer = HttpServer.create(new InetSocketAddress(port), 0);
             this.httpServer.setExecutor(this.httpWorkers = Executors.newFixedThreadPool(NUM_WORKERS));
+            this.httpServer.createContext("/", new Handler.NotFoundHandler());
             this.httpServer.createContext(KvHandler.PATH_PREFIX, new KvHandler());
             this.httpServer.createContext(QueryHandler.PATH_PREFIX, new QueryHandler());
         } catch (IOException e) {
