@@ -1,5 +1,6 @@
 package app_kvHttp;
 
+import app_kvECS.ECSClient;
 import app_kvHttp.controller.Handler;
 import app_kvHttp.controller.KvHandler;
 import app_kvHttp.controller.QueryHandler;
@@ -39,6 +40,7 @@ public class KVHttpService {
             this.kvStorePool = new KVStorePool(NUM_WORKERS);
 
             // Then preemptively fetch metadata information
+            this.zk.initializeRootNodesForEcs(ECSClient.ECS_NAME);
             this.kvStorePool.updateMetadata(this.zk.getData(ZooKeeperService.ZK_METADATA));
             this.zk.watchDataForever(ZooKeeperService.ZK_METADATA, kvStorePool::updateMetadata);
         } catch (IOException e) {
