@@ -1,5 +1,6 @@
 package ecs.zk;
 
+import app_kvECS.ECSClient;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
@@ -21,6 +22,7 @@ public class ZooKeeperService {
     public static final String LOCALHOST_CONNSTR = "localhost:2181";
     public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data", ZK_MUTEX = "/lock";
     public static final String DEFAULT_LOCK_NAME = "default";
+    private final String WRITE_LOCK_PREFIX = "write-", READ_LOCK_PREFIX = "read-";
 
     private final ZooKeeper zooKeeper;
 
@@ -194,45 +196,55 @@ public class ZooKeeperService {
         }
     }
 
-    public String getEphemeralSequenceNum(String nodeName) {
+    public int getEphemeralSequenceNum(String nodeName) {
         int index = nodeName.lastIndexOf('-');
-        String seqNum = nodeName.substring(index);
-        return seqNum;
+        return Integer.parseInt(nodeName.substring(index));
     }
 
     /**
-     * Acquire a global lock. Adapted from https://dzone.com/articles/distributed-lock-using
+     * Acquire a global read-write lock.
+     * Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
      *
      * @param lockName lock to acquire
      * @return the path to the lock to be used in {@link #unlock(String)}
      * @throws IOException on failure
      */
     public String lock(String lockName, boolean isRead) throws IOException {
+        String baseLockPath = ZK_MUTEX + "/" + lockName;
         try {
-            if (isRead) {
-                lockName = "read-" + lockName;
-            } else {
-                lockName = "write-" + lockName;
+            // 0. If we're the first ones trying to grab this lock, make sure the parent exists
+            try {
+                createNode(ZooKeeperService.ZK_MUTEX, new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
+            } catch (Exception ignored) {
             }
-            String lockPath = zooKeeper.create(ZK_MUTEX + "/" + lockName, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+
+            // 1. Create lock node
+            String lockPath = zooKeeper.create(
+                    baseLockPath + "/" + (isRead ? READ_LOCK_PREFIX : WRITE_LOCK_PREFIX),
+                    null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL
+            );
             final Object lock = new Object();
             synchronized (lock) {
                 do {
-                    List<String> nodes = zooKeeper.getChildren(ZK_MUTEX, event -> {
+                    // 2. Call getChildren on lock node
+                    List<String> nodes = zooKeeper.getChildren(baseLockPath, event -> {
                         synchronized (lock) {
                             lock.notifyAll();
                         }
                     });
-                    if (isRead) {
-                        nodes = nodes.stream().filter(node -> node.startsWith("write-"))
-                                .collect(Collectors.toList());
-                    }
 
+                    // 3. Check if we're next
+                    if (isRead) {
+                        nodes = nodes.stream().filter(node -> node.startsWith(WRITE_LOCK_PREFIX)).collect(Collectors.toList());
+                    }
                     Collections.sort(nodes);
 
-                    if (lockPath.endsWith(getEphemeralSequenceNum(nodes.get(0)))) return lockPath;
-
-                    else lock.wait();
+                    if (getEphemeralSequenceNum(lockPath) <= getEphemeralSequenceNum(nodes.get(0))) {
+                        return lockPath;
+                    } else {
+                        // 4,5,6. Go back to step 2
+                        lock.wait();
+                    }
                 } while (true);
             }
         } catch (KeeperException | InterruptedException e) {
@@ -241,7 +253,7 @@ public class ZooKeeperService {
     }
 
     /**
-     * Release a global lock. Adapted from https://dzone.com/articles/distributed-lock-using
+     * Release a global lock. Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
      *
      * @param lockPath path to the znode representing the lock to release
      * @throws IOException on failure
