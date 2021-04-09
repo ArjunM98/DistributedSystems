@@ -326,26 +326,4 @@ public class ZooKeeperService {
             }
         };
     }
-
-    /**
-     * Acquire a global read-write lock.
-     * Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
-     *
-     * @param lockName lock to acquire
-     * @return the path to the lock to be used in {@link #unlock(String)}
-     * @throws IOException on failure
-     */
-    public String lock(String lockName, boolean isRead) throws IOException {
-        logger.warn("Not implemented");
-        return "";
-    }
-
-    /**
-     * Release a global lock. Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
-     *
-     * @param lockPath path to the znode representing the lock to release
-     */
-    public void unlock(String lockPath) {
-        logger.warn("Not implemented");
-    }
 }
