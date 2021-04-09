@@ -1,5 +1,8 @@
 package client;
 
+import app_kvHttp.model.Model;
+import app_kvHttp.model.request.Query;
+import app_kvHttp.model.request.Remapping;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
 import org.apache.log4j.Logger;
@@ -38,6 +41,15 @@ public class KVStore implements KVCommInterface {
      */
     public KVStore(String address, int port) {
         hashRing.addServer(new ECSNode("server", address, port));
+    }
+
+    /**
+     * Initialize KVStore with a full ECS hash ring
+     *
+     * @param hashRing the name/address/port collection of one or more KVServers
+     */
+    public KVStore(ECSHashRing<ECSNode> hashRing) {
+        hashRing.addAll(hashRing);
     }
 
     @Override
@@ -182,6 +194,98 @@ public class KVStore implements KVCommInterface {
         }
         // 4. Could not satisfy request after multiple attempts
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
+    }
+
+    public KVMessage getAll(Query filter) throws IOException {
+        long messageId = msgID.get();
+        final String filterString = Model.toString(filter);
+
+        // 1. Get a server from our pool to contact
+        for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
+            final ECSNode server = hashRing.getServer(filterString);
+            if (server == null) throw new IOException("Not connected to a KVServer");
+            final Socket clientSocket = getConnectionOrBackup(server);
+
+            // 2. Make the request to designated coordinator
+            messageId = msgID.incrementAndGet();
+            try {
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_GET_ALL, filterString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
+            } catch (IOException e) {
+                disconnect(server.getConnectionString(), clientSocket);
+                hashRing.removeServer(server);
+            } catch (Exception e) {
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, "" + e.getMessage(), messageId);
+            }
+        }
+
+        // 3. Could not satisfy request after multiple attempts
+        return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
+    }
+
+    public KVMessage putAll(Query filter, Remapping mapping) throws IOException {
+        long messageId = msgID.get();
+        final String filterString = Model.toString(filter), mappingString = Model.toString(mapping);
+
+        // 1. Get a server from our pool to contact
+        for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
+            final ECSNode server = hashRing.getServer(filterString);
+            if (server == null) throw new IOException("Not connected to a KVServer");
+            final Socket clientSocket = getConnectionOrBackup(server);
+
+            // 2. Make the request to designated coordinator
+            messageId = msgID.incrementAndGet();
+            try {
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_PUT_ALL, filterString, mappingString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
+            } catch (IOException e) {
+                disconnect(server.getConnectionString(), clientSocket);
+                hashRing.removeServer(server);
+            } catch (Exception e) {
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, "" + e.getMessage(), messageId);
+            }
+        }
+
+        // 3. Could not satisfy request after multiple attempts
+        return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
+    }
+
+    public KVMessage deleteAll(Query filter) throws Exception {
+        long messageId = msgID.get();
+        final String filterString = Model.toString(filter);
+
+        // 1. Get a server from our pool to contact
+        for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
+            final ECSNode server = hashRing.getServer(filterString);
+            if (server == null) throw new IOException("Not connected to a KVServer");
+            final Socket clientSocket = getConnectionOrBackup(server);
+
+            // 2. Make the request to designated coordinator
+            messageId = msgID.incrementAndGet();
+            try {
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_DELETE_ALL, filterString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
+            } catch (IOException e) {
+                disconnect(server.getConnectionString(), clientSocket);
+                hashRing.removeServer(server);
+            } catch (Exception e) {
+                return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, "" + e.getMessage(), messageId);
+            }
+        }
+
+        // 3. Could not satisfy request after multiple attempts
+        return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
+    }
+
+    /**
+     * Proactively update metadata from a trusted outside source (e.g. a ZooKeeper watcher)
+     */
+    public void suggestMetadataUpdate(String newConfig) {
+        try {
+            if (!this.hashRing.toConfig().equals(newConfig)) this.updateMetadata(newConfig);
+        } catch (Exception e) {
+            logger.warn("Could not update metadata: " + e);
+        }
     }
 
     private void updateMetadata(String newConfig) throws IOException {

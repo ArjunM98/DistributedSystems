@@ -71,10 +71,32 @@ public class KVSingleFileStorage implements IKVStorage {
     }
 
     @Override
+    public List<KVPair> getAllKV(Predicate<KVPair> filter) {
+        try {
+            lock.readLock().lock();
+            return requireNonNull(readFromStoreMany(filter));
+        } catch (Exception e) {
+            return new ArrayList<>();
+        } finally {
+            lock.readLock().unlock();
+        }
+    }
+
+    @Override
     public void putKV(String key, String value) {
         try {
             lock.writeLock().lock();
             writeToStore(new KVPair(Tombstone.VALID, key, value));
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    @Override
+    public List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl) {
+        try {
+            lock.writeLock().lock();
+            return writeToStoreMany(filter, valExpr, valRepl);
         } finally {
             lock.writeLock().unlock();
         }
@@ -137,7 +159,7 @@ public class KVSingleFileStorage implements IKVStorage {
     }
 
     @Override
-    public void deleteIf(Predicate<KVPair> filter) {
+    public void deleteIf(Predicate<KVPair> filter) throws KVServerException {
         try {
             lock.writeLock().lock();
             // 1. Remove dead entries; this may speed things up
@@ -155,7 +177,7 @@ public class KVSingleFileStorage implements IKVStorage {
 
             // 3. Overwrite original file
             if (!storage.delete() || !tempStorage.renameTo(storage)) {
-                throw new IOException("Unable to clear original file");
+                throw new KVServerException("Unable to clear original file", KVMessage.StatusType.DELETE_ALL_ERROR);
             }
         } catch (IOException e) {
             logger.error("Could not delete KV pairs", e);
@@ -180,6 +202,33 @@ public class KVSingleFileStorage implements IKVStorage {
     }
 
     /**
+     * NOT thread-safe -- use an external ReadLock
+     *
+     * @param filter - isolate relevant details
+     * @return all KVPairs that match the filter
+     */
+    private List<KVPair> readFromStoreMany(Predicate<KVPair> filter) {
+        final Map<String, KVPair> keyKVPair = new HashMap<>();
+        try (Stream<String> lines = Files.lines(storage.toPath())) {
+            lines.sequential()
+                    .map(KVPair::deserialize)
+                    .filter(filter)
+                    .forEachOrdered(kv -> {
+                        if (kv.tombstone == Tombstone.VALID) {
+                            keyKVPair.put(kv.key, kv);
+                        } else {
+                            keyKVPair.remove(kv.key);
+                        }
+                    });
+            List<KVPair> vals = new ArrayList<>(keyKVPair.values());
+            return vals.size() > 0 ? vals : null;
+        } catch (IOException e) {
+            logger.error("An error occurred during read from store.", e);
+            return null;
+        }
+    }
+
+    /**
      * NOT thread-safe -- use an external WriteLock
      */
     private void writeToStore(KVPair kv) {
@@ -190,6 +239,48 @@ public class KVSingleFileStorage implements IKVStorage {
             }
         } catch (IOException e) {
             logger.error("An error occurred during write to store.", e);
+        }
+    }
+
+    /**
+     * NOT thread-safe -- use an external WriteLock
+     */
+    private List<KVPair> writeToStoreMany(Predicate<KVPair> filter, String valExpr, String valRepl) {
+        try {
+            if (!storage.canWrite() && !storage.createNewFile()) logger.warn("Could not access store");
+
+            final Map<String, KVPair> keyKVPair = new HashMap<>();
+
+            // 1. Identify valid entries first
+            try (Stream<String> lines = Files.lines(storage.toPath())) {
+                lines.sequential()
+                        .map(KVPair::deserialize)
+                        .filter(filter)
+                        .forEachOrdered(kv -> {
+                            if (kv.tombstone == Tombstone.VALID) {
+                                keyKVPair.put(kv.key, kv);
+                            } else {
+                                keyKVPair.remove(kv.key);
+                            }
+                        });
+            }
+
+            List<KVPair> newVals = new ArrayList<>();
+            // 2. Write the updated values to the file
+            try (PrintWriter writer = new PrintWriter(new FileWriter(storage, true))) {
+                keyKVPair.values().stream()
+                        .map(kv -> new KVPair(kv.key, kv.value.replaceAll(valExpr, valRepl)))
+                        .forEach(kv -> {
+                            newVals.add(kv);
+                            writer.println(kv.serialize());
+                        });
+            }
+
+            return newVals;
+
+        } catch (IOException e) {
+            logger.error("An error occurred during write to store.", e);
+            return new ArrayList<>();
         }
     }
 

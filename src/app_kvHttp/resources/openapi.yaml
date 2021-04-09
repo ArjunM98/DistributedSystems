@@ -1,0 +1,360 @@
+openapi: 3.0.1
+info:
+  title: Basic Storage Service
+  description: Group 69 M4 Enhancement for ECE419 Distributed Systems
+  version: 1.0.0
+externalDocs:
+  description: GitHub Repository
+  url: 'https://github.com/ArjunM98/DistributedSystems/'
+servers:
+  - url: 'http://localhost:8080/api'
+tags:
+  - name: Basic KV Service
+    description: M1-M3 functionality (GET/PUT/DELETE by exact key)
+  - name: M4 Enhancement
+    description: M4 functionality (GET/PUT/DELETE by query)
+paths:
+  '/kv/{key}':
+    get:
+      tags:
+        - Basic KV Service
+      summary: Get value by key from the KV service
+      description: Returns a single KV
+      operationId: getValueByKey
+      parameters:
+        - name: key
+          in: path
+          description: Key of the KV to return
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: StatusType.GET_SUCCESS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.GET_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+    put:
+      tags:
+        - Basic KV Service
+      summary: Update/insert value by key into the KV service
+      operationId: putValueByKey
+      parameters:
+        - name: key
+          in: path
+          description: Key of the KV to update/insert
+          required: true
+          schema:
+            type: string
+      requestBody:
+        description: Value of the KV to update/insert
+        content:
+          text/plain:
+            schema:
+              type: string
+        required: true
+      responses:
+        '200':
+          description: StatusType.PUT_SUCCESS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KV'
+        '201':
+          description: StatusType.PUT_UPDATE
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.PUT_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED or StatusType.SERVER_WRITE_LOCK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+    delete:
+      tags:
+        - Basic KV Service
+      summary: Delete value by key from the KV service
+      operationId: deleteValueByKey
+      parameters:
+        - name: key
+          in: path
+          description: Key of the KV to delete
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: StatusType.DELETE_SUCCESS
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.DELETE_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED or StatusType.SERVER_WRITE_LOCK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+  '/query/get':
+    post:
+      tags:
+        - M4 Enhancement
+      summary: Retrieve KVs matching filter from the KV service
+      operationId: getKVsByFilter
+      requestBody:
+        description: Query
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BodySelect'
+        required: true
+      responses:
+        '200':
+          description: StatusType.GET_SUCCESS
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.GET_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+  '/query/delete':
+    post:
+      tags:
+        - M4 Enhancement
+      summary: Delete KVs matching filter from the KV service
+      operationId: deleteKVsByFilter
+      requestBody:
+        description: Query
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BodySelect'
+        required: true
+      responses:
+        '200':
+          description: StatusType.DELETE_SUCCESS
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.DELETE_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED or StatusType.SERVER_WRITE_LOCK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+  '/query/update':
+    post:
+      tags:
+        - M4 Enhancement
+      summary: Update KVs matching filter from the KV service
+      operationId: updateKVsByFilter
+      requestBody:
+        description: Query
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BodyUpdate'
+        required: true
+      responses:
+        '201':
+          description: StatusType.PUT_UPDATE
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/KV'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '404':
+          description: StatusType.PUT_ERROR
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '500':
+          description: StatusType.FAILED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+        '503':
+          description: StatusType.SERVER_STOPPED or StatusType.SERVER_WRITE_LOCK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusType'
+components:
+  schemas:
+    KV:
+      type: object
+      properties:
+        key:
+          type: string
+          description: 'KV key, max 20B'
+        value:
+          type: string
+          description: 'KV value, max 120KB'
+      xml:
+        name: KV
+    StatusType:
+      type: object
+      properties:
+        status:
+          type: string
+          description: KVMessage.StatusType
+        message:
+          type: string
+          description: Additional details
+      xml:
+        name: StatusType
+    Query:
+      type: object
+      properties:
+        keyFilter:
+          type: string
+          description: Regex to filter keys on
+        valueFilter:
+          type: string
+          description: Regex to filter values on
+      xml:
+        name: Query
+    Remapping:
+      type: object
+      properties:
+        find:
+          type: string
+          description: Regex to find substrings to replace for the update.
+        replace:
+          type: string
+          description: Replacement string used by regex. Can leverage capture groups.
+      xml:
+        name: Remapping
+    BodySelect:
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/Query'
+      xml:
+        name: BodySelect
+    BodyUpdate:
+      type: object
+      properties:
+        filter:
+          $ref: '#/components/schemas/Query'
+        mapping:
+          $ref: '#/components/schemas/Remapping'
+      xml:
+        name: BodyUpdate
