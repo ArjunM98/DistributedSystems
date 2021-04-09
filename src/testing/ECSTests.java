@@ -112,7 +112,7 @@ public class ECSTests extends TestCase {
 
         KVMessage res = kvClient.getAll(new Query(".*", ".*"));
 
-        assertEquals(3, res.getValue().split("/n").length);
+        assertEquals(3, res.getValue().split("\n").length);
         kvClient.disconnect();
     }
 
@@ -137,9 +137,9 @@ public class ECSTests extends TestCase {
 
         KVMessage res = kvClient.putAll(new Query(".*", ".*"), new Remapping("t", "T"));
 
-        assertEquals(3, res.getValue().split("/n").length);
+        assertEquals(3, res.getValue().split("\n").length);
 
-        List<IKVStorage.KVPair> updatedVals = Arrays.stream(res.getValue().split("/n"))
+        List<IKVStorage.KVPair> updatedVals = res.getValue().lines()
                 .map(IKVStorage.KVPair::deserialize)
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
@@ -170,7 +170,7 @@ public class ECSTests extends TestCase {
         kvClient.deleteAll(new Query(coordinator.getNodeHost() + ":" + coordinator.getNodePort(), ".*"));
         KVMessage res = kvClient.getAll(new Query(".*", ".*"));
 
-        assertEquals(2, res.getValue().split("/n").length);
+        assertEquals(2, res.getValue().split("\n").length);
         kvClient.disconnect();
     }
 

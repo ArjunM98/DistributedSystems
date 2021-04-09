@@ -248,7 +248,7 @@ public class KVServer extends Thread implements IKVServer {
                 .collect(Collectors.toList());
 
         // 4.a if success, consolidate results
-        if (allPairs.size() > 0) return allPairs.stream().map(KVMessage::getValue).collect(Collectors.joining("/n"));
+        if (allPairs.size() > 0) return allPairs.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
 
         // 4.b if not, throw and propagate
         throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_GET_ALL_ERROR);
@@ -266,7 +266,7 @@ public class KVServer extends Thread implements IKVServer {
         try {
             List<KVPair> value = storage.getAllKV(kv -> keyPredicate.test(kv.key) && valuePredicate.test(kv.value));
 
-            if (!value.isEmpty()) return value.stream().map(KVPair::serialize).collect(Collectors.joining("/n"));
+            if (!value.isEmpty()) return value.stream().map(KVPair::serialize).collect(Collectors.joining("\n"));
 
             logger.debug("Unable to find any keys with expression");
             throw new KVServerException("No keys matching filter", KVMessage.StatusType.GET_ALL_ERROR);
@@ -329,7 +329,7 @@ public class KVServer extends Thread implements IKVServer {
                 .collect(Collectors.toList());
 
         if (allUpdatedVals.size() > 0)
-            return allUpdatedVals.stream().map(KVMessage::getValue).collect(Collectors.joining("/n"));
+            return allUpdatedVals.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
 
         throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_PUT_ALL_ERROR);
     }
@@ -358,7 +358,7 @@ public class KVServer extends Thread implements IKVServer {
                 return value.stream()
                         .filter(kv -> ecsServerConnection.isResponsibleForKey(kv.key, false))
                         .map(IKVStorage.KVPair::serialize)
-                        .collect(Collectors.joining("/n"));
+                        .collect(Collectors.joining("\n"));
             }
 
             logger.debug("Unable to find any keys with expression");
