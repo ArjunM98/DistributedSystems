@@ -198,7 +198,7 @@ public class ZooKeeperService {
 
     public int getEphemeralSequenceNum(String nodeName) {
         int index = nodeName.lastIndexOf('-');
-        return Integer.parseInt(nodeName.substring(index));
+        return Integer.parseInt(nodeName.substring(index+1));
     }
 
     /**
@@ -213,9 +213,11 @@ public class ZooKeeperService {
         String baseLockPath = ZK_MUTEX + "/" + lockName;
         try {
             // 0. If we're the first ones trying to grab this lock, make sure the parent exists
-            try {
-                createNode(ZooKeeperService.ZK_MUTEX, new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
-            } catch (Exception ignored) {
+            if (!nodeExists(baseLockPath)) {
+                try {
+                    createNode(baseLockPath, new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
+                } catch (Exception ignored) {
+                }
             }
 
             // 1. Create lock node
