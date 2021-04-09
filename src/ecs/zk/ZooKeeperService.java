@@ -1,5 +1,6 @@
 package ecs.zk;
 
+import app_kvECS.ECSClient;
 import org.apache.log4j.Logger;
 import org.apache.zookeeper.*;
 import org.apache.zookeeper.data.Stat;
@@ -7,17 +8,22 @@ import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class ZooKeeperService {
-    public static final String LOCALHOST_CONNSTR = "localhost:2181";
-    public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
-    public static final String DEFAULT_LOCK_NAME = "default";
     private static final Logger logger = Logger.getRootLogger();
+
+    public static final String LOCALHOST_CONNSTR = "localhost:2181";
+    public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data", ZK_MUTEX = "/lock";
+    public static final String DEFAULT_LOCK_NAME = "default";
+    private final String WRITE_LOCK_PREFIX = "write-", READ_LOCK_PREFIX = "read-";
+
     private final ZooKeeper zooKeeper;
 
     /**
@@ -68,6 +74,9 @@ public class ZooKeeperService {
         }
         if (!nodeExists(ZooKeeperService.ZK_METADATA)) {
             createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
+        }
+        if (!nodeExists(ZooKeeperService.ZK_MUTEX)) {
+            createNode(ZooKeeperService.ZK_MUTEX, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
         }
     }
 
@@ -184,6 +193,78 @@ public class ZooKeeperService {
             return zooKeeper.getData(node, generateDeletionWatcher(this, node, onDeleted), null);
         } catch (Exception e) {
             throw new IOException("Could not set deletion watcher", e);
+        }
+    }
+
+    public int getEphemeralSequenceNum(String nodeName) {
+        int index = nodeName.lastIndexOf('-');
+        return Integer.parseInt(nodeName.substring(index+1));
+    }
+
+    /**
+     * Acquire a global read-write lock.
+     * Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
+     *
+     * @param lockName lock to acquire
+     * @return the path to the lock to be used in {@link #unlock(String)}
+     * @throws IOException on failure
+     */
+    public String lock(String lockName, boolean isRead) throws IOException {
+        String baseLockPath = ZK_MUTEX + "/" + lockName;
+        try {
+            // 0. If we're the first ones trying to grab this lock, make sure the parent exists
+            if (!nodeExists(baseLockPath)) {
+                try {
+                    createNode(baseLockPath, new KVAdminMessageProto(ECSClient.ECS_NAME, KVAdminMessage.AdminStatusType.EMPTY), false);
+                } catch (Exception ignored) {
+                }
+            }
+
+            // 1. Create lock node
+            String lockPath = zooKeeper.create(
+                    baseLockPath + "/" + (isRead ? READ_LOCK_PREFIX : WRITE_LOCK_PREFIX),
+                    null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL
+            );
+            final Object lock = new Object();
+            synchronized (lock) {
+                do {
+                    // 2. Call getChildren on lock node
+                    List<String> nodes = zooKeeper.getChildren(baseLockPath, event -> {
+                        synchronized (lock) {
+                            lock.notifyAll();
+                        }
+                    });
+
+                    // 3. Check if we're next
+                    if (isRead) {
+                        nodes = nodes.stream().filter(node -> node.startsWith(WRITE_LOCK_PREFIX)).collect(Collectors.toList());
+                    }
+                    Collections.sort(nodes);
+
+                    if (nodes.isEmpty() || getEphemeralSequenceNum(lockPath) <= getEphemeralSequenceNum(nodes.get(0))) {
+                        return lockPath;
+                    } else {
+                        // 4,5,6. Go back to step 2
+                        lock.wait();
+                    }
+                } while (true);
+            }
+        } catch (KeeperException | InterruptedException e) {
+            throw new IOException(e);
+        }
+    }
+
+    /**
+     * Release a global lock. Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
+     *
+     * @param lockPath path to the znode representing the lock to release
+     * @throws IOException on failure
+     */
+    public void unlock(String lockPath) throws IOException {
+        try {
+            zooKeeper.delete(lockPath, -1);
+        } catch (KeeperException | InterruptedException e) {
+            throw new IOException(e);
         }
     }
 
