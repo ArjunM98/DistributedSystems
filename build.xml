@@ -183,6 +183,15 @@
         </junit>
     </target>
 
+    <!-- run m4 test cases -->
+    <target name="httpTest" depends="build">
+        <junit>
+            <classpath refid="project.classpath"/>
+            <formatter type="brief" usefile="false"/>
+            <test name="testing.HttpTests"/>
+        </junit>
+    </target>
+
     <target name="run">
         <java classname="${main.class}" classpathref="class.path"/>
     </target>
