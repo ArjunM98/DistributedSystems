@@ -1,5 +1,8 @@
 package client;
 
+import app_kvHttp.model.Model;
+import app_kvHttp.model.request.Query;
+import app_kvHttp.model.request.Remapping;
 import ecs.ECSHashRing;
 import ecs.ECSNode;
 import org.apache.log4j.Logger;
@@ -193,21 +196,21 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    public KVMessage getAll(String keyFilter) throws IOException {
+    public KVMessage getAll(Query filter) throws IOException {
         long messageId = msgID.get();
+        final String filterString = Model.toString(filter);
 
         // 1. Get a server from our pool to contact
         for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
-            final ECSNode server = hashRing.getServer(keyFilter);
+            final ECSNode server = hashRing.getServer(filterString);
             if (server == null) throw new IOException("Not connected to a KVServer");
             final Socket clientSocket = getConnectionOrBackup(server);
 
             // 2. Make the request to designated coordinator
             messageId = msgID.incrementAndGet();
             try {
-                new KVMessageProto(KVMessage.StatusType.COORDINATE_GET_ALL, keyFilter, messageId).writeMessageTo(clientSocket.getOutputStream());
-                final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
-                return response;
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_GET_ALL, filterString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
             } catch (IOException e) {
                 disconnect(server.getConnectionString(), clientSocket);
                 hashRing.removeServer(server);
@@ -220,22 +223,21 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    public KVMessage putAll(String keyFilter, String valueExp, String valueRepl) throws IOException {
+    public KVMessage putAll(Query filter, Remapping mapping) throws IOException {
         long messageId = msgID.get();
+        final String filterString = Model.toString(filter), mappingString = Model.toString(mapping);
 
         // 1. Get a server from our pool to contact
         for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
-            final ECSNode server = hashRing.getServer(keyFilter);
+            final ECSNode server = hashRing.getServer(filterString);
             if (server == null) throw new IOException("Not connected to a KVServer");
             final Socket clientSocket = getConnectionOrBackup(server);
 
             // 2. Make the request to designated coordinator
             messageId = msgID.incrementAndGet();
             try {
-                new KVMessageProto(KVMessage.StatusType.COORDINATE_PUT_ALL, keyFilter, valueExp + " " + valueRepl, messageId)
-                        .writeMessageTo(clientSocket.getOutputStream());
-                final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
-                return response;
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_PUT_ALL, filterString, mappingString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
             } catch (IOException e) {
                 disconnect(server.getConnectionString(), clientSocket);
                 hashRing.removeServer(server);
@@ -248,22 +250,21 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    public KVMessage deleteAll(String keyFilter) throws Exception {
+    public KVMessage deleteAll(Query filter) throws Exception {
         long messageId = msgID.get();
+        final String filterString = Model.toString(filter);
 
         // 1. Get a server from our pool to contact
         for (int iTry = 0; iTry < MAX_RETRIES; iTry++) {
-            final ECSNode server = hashRing.getServer(keyFilter);
+            final ECSNode server = hashRing.getServer(filterString);
             if (server == null) throw new IOException("Not connected to a KVServer");
             final Socket clientSocket = getConnectionOrBackup(server);
 
             // 2. Make the request to designated coordinator
             messageId = msgID.incrementAndGet();
             try {
-                new KVMessageProto(KVMessage.StatusType.COORDINATE_DELETE_ALL, keyFilter, messageId)
-                        .writeMessageTo(clientSocket.getOutputStream());
-                final KVMessageProto response = new KVMessageProto(clientSocket.getInputStream());
-                return response;
+                new KVMessageProto(KVMessage.StatusType.COORDINATE_DELETE_ALL, filterString, messageId).writeMessageTo(clientSocket.getOutputStream());
+                return new KVMessageProto(clientSocket.getInputStream());
             } catch (IOException e) {
                 disconnect(server.getConnectionString(), clientSocket);
                 hashRing.removeServer(server);

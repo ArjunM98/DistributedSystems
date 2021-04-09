@@ -1,6 +1,8 @@
 package testing;
 
 import app_kvECS.ECSClient;
+import app_kvHttp.model.request.Query;
+import app_kvHttp.model.request.Remapping;
 import app_kvServer.storage.IKVStorage;
 import client.KVStore;
 import ecs.IECSNode;
@@ -108,8 +110,7 @@ public class ECSTests extends TestCase {
             }
         });
 
-        String regExp = ".*";
-        KVMessage res = kvClient.getAll(regExp);
+        KVMessage res = kvClient.getAll(new Query(".*", ".*"));
 
         assertEquals(3, res.getValue().split("/n").length);
         kvClient.disconnect();
@@ -134,7 +135,7 @@ public class ECSTests extends TestCase {
             }
         });
 
-        KVMessage res = kvClient.putAll(".*", "t", "T");
+        KVMessage res = kvClient.putAll(new Query(".*", ".*"), new Remapping("t", "T"));
 
         assertEquals(3, res.getValue().split("/n").length);
 
@@ -166,8 +167,8 @@ public class ECSTests extends TestCase {
             }
         });
 
-        kvClient.deleteAll(coordinator.getNodeHost() + ":" + coordinator.getNodePort());
-        KVMessage res = kvClient.getAll(".*");
+        kvClient.deleteAll(new Query(coordinator.getNodeHost() + ":" + coordinator.getNodePort(), ".*"));
+        KVMessage res = kvClient.getAll(new Query(".*", ".*"));
 
         assertEquals(2, res.getValue().split("/n").length);
         kvClient.disconnect();

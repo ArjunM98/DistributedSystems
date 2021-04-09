@@ -1,5 +1,8 @@
 package app_kvServer;
 
+import app_kvHttp.model.Model;
+import app_kvHttp.model.request.Query;
+import app_kvHttp.model.request.Remapping;
 import com.google.protobuf.InvalidProtocolBufferException;
 import org.apache.log4j.Logger;
 import shared.messages.KVMessage.StatusType;
@@ -143,7 +146,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handleCoordinateGetAll(KVMessageProto req) throws KVServerException {
         try {
-            String val = server.coordinateGetAllKV(req.getKey());
+            String val = server.coordinateGetAllKV(Model.fromString(req.getKey(), Query.class));
             return new KVMessageProto(StatusType.COORDINATE_GET_ALL_SUCCESS, req.getKey(), val, req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.COORDINATE_GET_ALL_ERROR) throw e;
@@ -162,7 +165,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handleGetAll(KVMessageProto req) throws KVServerException {
         try {
-            String val = server.getAllKV(req.getKey());
+            String val = server.getAllKV(Model.fromString(req.getKey(), Query.class));
             return new KVMessageProto(StatusType.GET_ALL_SUCCESS, req.getKey(), val, req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.GET_ALL_ERROR) throw e;
@@ -206,8 +209,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handleCoordinatePutAll(KVMessageProto req) throws KVServerException {
         try {
-            String[] reqVal = req.getValue().split(" ", 2);
-            String val = server.coordinatePutAllKV(req.getKey(), reqVal[0], reqVal[1]);
+            String val = server.coordinatePutAllKV(Model.fromString(req.getKey(), Query.class), Model.fromString(req.getValue(), Remapping.class));
             return new KVMessageProto(StatusType.COORDINATE_PUT_ALL_SUCCESS, req.getKey(), val, req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.COORDINATE_PUT_ALL_ERROR) throw e;
@@ -226,8 +228,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handlePutAll(KVMessageProto req) throws KVServerException {
         try {
-            String[] reqVal = req.getValue().split(" ", 2);
-            String val = server.putAllKV(req.getKey(), reqVal[0], reqVal[1]);
+            String val = server.putAllKV(Model.fromString(req.getKey(), Query.class), Model.fromString(req.getValue(), Remapping.class));
             return new KVMessageProto(StatusType.PUT_ALL_SUCCESS, req.getKey(), val, req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.PUT_ALL_ERROR) throw e;
@@ -265,7 +266,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handleDeleteAll(KVMessageProto req) throws KVServerException {
         try {
-            server.deleteAll(req.getKey());
+            server.deleteAll(Model.fromString(req.getKey(), Query.class));
             return new KVMessageProto(StatusType.DELETE_ALL_SUCCESS, req.getKey(), req.getValue(), req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.DELETE_ALL_ERROR) throw e;
@@ -284,7 +285,7 @@ public class ClientConnection implements Runnable {
      */
     private KVMessageProto handleCoordinateDeleteAll(KVMessageProto req) throws KVServerException {
         try {
-            server.coordinateDeleteAllKV(req.getKey());
+            server.coordinateDeleteAllKV(Model.fromString(req.getKey(), Query.class));
             return new KVMessageProto(StatusType.COORDINATE_DELETE_ALL_SUCCESS, req.getKey(), req.getId());
         } catch (KVServerException e) {
             if (e.getErrorCode() != StatusType.COORDINATE_DELETE_ALL_ERROR) throw e;
