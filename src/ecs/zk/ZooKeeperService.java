@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 public class ZooKeeperService {
     private static final Logger logger = Logger.getRootLogger();
@@ -71,6 +72,9 @@ public class ZooKeeperService {
         }
         if (!nodeExists(ZooKeeperService.ZK_METADATA)) {
             createNode(ZooKeeperService.ZK_METADATA, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
+        }
+        if (!nodeExists(ZooKeeperService.ZK_MUTEX)) {
+            createNode(ZooKeeperService.ZK_MUTEX, new KVAdminMessageProto(sender, KVAdminMessage.AdminStatusType.EMPTY), false);
         }
     }
 
@@ -190,6 +194,12 @@ public class ZooKeeperService {
         }
     }
 
+    public String getEphemeralSequenceNum(String nodeName) {
+        int index = nodeName.lastIndexOf('-');
+        String seqNum = nodeName.substring(index);
+        return seqNum;
+    }
+
     /**
      * Acquire a global lock. Adapted from https://dzone.com/articles/distributed-lock-using
      *
@@ -197,22 +207,33 @@ public class ZooKeeperService {
      * @return the path to the lock to be used in {@link #unlock(String)}
      * @throws IOException on failure
      */
-    public String lock(String lockName) throws IOException {
+    public String lock(String lockName, boolean isRead) throws IOException {
         try {
+            if (isRead) {
+                lockName = "read-" + lockName;
+            } else {
+                lockName = "write-" + lockName;
+            }
             String lockPath = zooKeeper.create(ZK_MUTEX + "/" + lockName, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
             final Object lock = new Object();
             synchronized (lock) {
-                while (true) {
+                do {
                     List<String> nodes = zooKeeper.getChildren(ZK_MUTEX, event -> {
                         synchronized (lock) {
                             lock.notifyAll();
                         }
                     });
+                    if (isRead) {
+                        nodes = nodes.stream().filter(node -> node.startsWith("write-"))
+                                .collect(Collectors.toList());
+                    }
+
                     Collections.sort(nodes);
 
-                    if (lockPath.endsWith(nodes.get(0))) return lockPath;
+                    if (lockPath.endsWith(getEphemeralSequenceNum(nodes.get(0)))) return lockPath;
+
                     else lock.wait();
-                }
+                } while (true);
             }
         } catch (KeeperException | InterruptedException e) {
             throw new IOException(e);
