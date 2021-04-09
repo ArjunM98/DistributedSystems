@@ -198,7 +198,7 @@ public class ZooKeeperService {
 
     public int getEphemeralSequenceNum(String nodeName) {
         int index = nodeName.lastIndexOf('-');
-        return Integer.parseInt(nodeName.substring(index+1));
+        return Integer.parseInt(nodeName.substring(index + 1));
     }
 
     /**
@@ -258,13 +258,12 @@ public class ZooKeeperService {
      * Release a global lock. Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
      *
      * @param lockPath path to the znode representing the lock to release
-     * @throws IOException on failure
      */
-    public void unlock(String lockPath) throws IOException {
+    public void unlock(String lockPath) {
         try {
             zooKeeper.delete(lockPath, -1);
         } catch (KeeperException | InterruptedException e) {
-            throw new IOException(e);
+            logger.warn("Unlock error: " + e);
         }
     }
 
