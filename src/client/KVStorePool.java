@@ -7,6 +7,7 @@ import shared.ResourcePool;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
 
 public class KVStorePool extends ResourcePool<KVStore> {
     private static final Logger logger = Logger.getRootLogger();
@@ -18,6 +19,13 @@ public class KVStorePool extends ResourcePool<KVStore> {
 
     public KVStorePool(int size) {
         super(size);
+    }
+
+    @Override
+    public synchronized KVStore acquireResource(long timeout, TimeUnit unit) throws Exception {
+        final KVStore resource = super.acquireResource(timeout, unit);
+        resource.suggestMetadataUpdate(hashRing.toConfig());
+        return resource;
     }
 
     @Override
