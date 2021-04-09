@@ -30,7 +30,7 @@ public class BodySelect extends Model {
      */
     public static void main(String[] args) throws Exception {
         // 1. Generate test case
-        final String json = Model.toString(Map.of("filter", Map.of("value_filter", "value_.*")));
+        final String json = Model.toString(Map.of("filter", Map.of("valueFilter", "value_.*")));
         System.out.println("test = " + json);
 
         // 2. Deserialize from JSON

@@ -323,10 +323,10 @@ components:
     Query:
       type: object
       properties:
-        key_filter:
+        keyFilter:
           type: string
           description: Regex to filter keys on
-        value_filter:
+        valueFilter:
           type: string
           description: Regex to filter values on
       xml:

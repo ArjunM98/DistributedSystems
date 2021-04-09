@@ -43,7 +43,7 @@ public class BodyUpdate extends Model {
     public static void main(String[] args) throws Exception {
         // 1. Generate test case
         final String json = Model.toString(Map.of(
-                "filter", Map.of("value_filter", "value_.*"),
+                "filter", Map.of("valueFilter", "value_.*"),
                 "mapping", Map.of("value", "new_value")
         ));
         System.out.println("test = " + json);

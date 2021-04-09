@@ -207,51 +207,63 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
         }
 
-        List<Callable<KVMessage>> tasks = new ArrayList<>();
-
-        // 1. Establish a temporary connection to each server in hash ring as a client and send request
-        for (ECSNode node : ecsServerConnection.getAllServers()) {
-            tasks.add(() -> {
-                // 1a. Connect to specified server
-                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
-
-                // 1b. Send message to get all
-                new KVMessageProto(KVMessage.StatusType.GET_ALL, Model.toString(filter), 0 /* only 1 request sent over this connection */)
-                        .writeMessageTo(socket.getOutputStream());
-
-                // 1c. Wait for response
-                KVMessageProto response = new KVMessageProto(socket.getInputStream());
-
-                // 1d. Disconnect from server
-                socket.close();
-
-                return response;
-            });
-        }
-
-        List<KVMessage> allPairs = new ArrayList<>();
-
-        // 2. Get result
+        String lockPath;
         try {
-            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
-                KVMessage res = result.get(5, TimeUnit.MINUTES);
-                logger.debug(String.format("%s", res.getStatus()));
-                allPairs.add(res);
-            }
-        } catch (Exception e) {
-            throw new KVServerException("Unable to gather all relevant keys", e, KVMessage.StatusType.FAILED);
+            lockPath = ecsServerConnection.lock(true);
+        } catch (IOException e) {
+            throw new KVServerException("Unable to acquire read lock", e, KVMessage.StatusType.FAILED);
         }
 
-        // 3. Check for at least one success
-        allPairs = allPairs.stream()
-                .filter(msg -> msg.getStatus() == KVMessage.StatusType.GET_ALL_SUCCESS)
-                .collect(Collectors.toList());
+        try {
+            List<Callable<KVMessage>> tasks = new ArrayList<>();
 
-        // 4.a if success, consolidate results
-        if (allPairs.size() > 0) return allPairs.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
+            // 1. Establish a temporary connection to each server in hash ring as a client and send request
+            for (ECSNode node : ecsServerConnection.getAllServers()) {
+                tasks.add(() -> {
+                    // 1a. Connect to specified server
+                    Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
 
-        // 4.b if not, throw and propagate
-        throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_GET_ALL_ERROR);
+                    // 1b. Send message to get all
+                    new KVMessageProto(KVMessage.StatusType.GET_ALL, Model.toString(filter), 0 /* only 1 request sent over this connection */)
+                            .writeMessageTo(socket.getOutputStream());
+
+                    // 1c. Wait for response
+                    KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                    // 1d. Disconnect from server
+                    socket.close();
+
+                    return response;
+                });
+            }
+
+            List<KVMessage> allPairs = new ArrayList<>();
+
+            // 2. Get result
+            try {
+                for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                    KVMessage res = result.get(5, TimeUnit.MINUTES);
+                    logger.debug(String.format("%s", res.getStatus()));
+                    allPairs.add(res);
+                }
+            } catch (Exception e) {
+                throw new KVServerException("Unable to gather all relevant keys", e, KVMessage.StatusType.FAILED);
+            }
+
+            // 3. Check for at least one success
+            allPairs = allPairs.stream()
+                    .filter(msg -> msg.getStatus() == KVMessage.StatusType.GET_ALL_SUCCESS)
+                    .collect(Collectors.toList());
+
+            // 4.a if success, consolidate results
+            if (allPairs.size() > 0)
+                return allPairs.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
+
+            // 4.b if not, throw and propagate
+            throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_GET_ALL_ERROR);
+        } finally {
+            ecsServerConnection.unlock(lockPath);
+        }
     }
 
     public String getAllKV(Query filter) throws KVServerException {
@@ -286,52 +298,61 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        // TODO: ACQUIRE WRITE LOCK
-
-        List<Callable<KVMessage>> tasks = new ArrayList<>();
-
-        // 1. Establish a temporary connection to each server in hash ring as a client and send request
-        for (ECSNode node : ecsServerConnection.getAllServers()) {
-            tasks.add(() -> {
-                // 1a. Connect to specified server
-                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
-
-                // 1b. Send message to get all
-                new KVMessageProto(KVMessage.StatusType.PUT_ALL, Model.toString(filter), Model.toString(mapping), 0 /* only 1 request sent over this connection */)
-                        .writeMessageTo(socket.getOutputStream());
-
-                // 1c. Wait for response
-                KVMessageProto response = new KVMessageProto(socket.getInputStream());
-
-                // 1d. Disconnect from server
-                socket.close();
-
-                return response;
-            });
-        }
-
-        List<KVMessage> allUpdatedVals = new ArrayList<>();
-
-        // 2. Put result
+        String lockPath;
         try {
-            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
-                KVMessage res = result.get(5, TimeUnit.MINUTES);
-                logger.debug(String.format("%s", res.getStatus()));
-                allUpdatedVals.add(res);
-            }
-        } catch (Exception e) {
-            throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+            lockPath = ecsServerConnection.lock(false);
+        } catch (IOException e) {
+            throw new KVServerException("Unable to acquire write lock", e, KVMessage.StatusType.FAILED);
         }
 
-        // 3. Filter down relevant results
-        allUpdatedVals = allUpdatedVals.stream()
-                .filter(msg -> msg.getStatus() == KVMessage.StatusType.PUT_ALL_SUCCESS)
-                .collect(Collectors.toList());
+        try {
+            List<Callable<KVMessage>> tasks = new ArrayList<>();
 
-        if (allUpdatedVals.size() > 0)
-            return allUpdatedVals.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
+            // 1. Establish a temporary connection to each server in hash ring as a client and send request
+            for (ECSNode node : ecsServerConnection.getAllServers()) {
+                tasks.add(() -> {
+                    // 1a. Connect to specified server
+                    Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
 
-        throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_PUT_ALL_ERROR);
+                    // 1b. Send message to get all
+                    new KVMessageProto(KVMessage.StatusType.PUT_ALL, Model.toString(filter), Model.toString(mapping), 0 /* only 1 request sent over this connection */)
+                            .writeMessageTo(socket.getOutputStream());
+
+                    // 1c. Wait for response
+                    KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                    // 1d. Disconnect from server
+                    socket.close();
+
+                    return response;
+                });
+            }
+
+            List<KVMessage> allUpdatedVals = new ArrayList<>();
+
+            // 2. Put result
+            try {
+                for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                    KVMessage res = result.get(5, TimeUnit.MINUTES);
+                    logger.debug(String.format("%s", res.getStatus()));
+                    allUpdatedVals.add(res);
+                }
+            } catch (Exception e) {
+                throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+            }
+
+            // 3. Filter down relevant results
+            allUpdatedVals = allUpdatedVals.stream()
+                    .filter(msg -> msg.getStatus() == KVMessage.StatusType.PUT_ALL_SUCCESS)
+                    .collect(Collectors.toList());
+
+            if (allUpdatedVals.size() > 0)
+                return allUpdatedVals.stream().map(KVMessage::getValue).collect(Collectors.joining("\n"));
+
+            throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_PUT_ALL_ERROR);
+        } finally {
+            ecsServerConnection.unlock(lockPath);
+        }
     }
 
     public String putAllKV(Query filter, Remapping mapping) throws KVServerException {
@@ -380,50 +401,59 @@ public class KVServer extends Thread implements IKVServer {
             throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
         }
 
-        // TODO: ACQUIRE WRITE LOCK
-
-        List<Callable<KVMessage>> tasks = new ArrayList<>();
-
-        // 1. Establish a temporary connection to each server in hash ring as a client and send request
-        for (ECSNode node : ecsServerConnection.getAllServers()) {
-            tasks.add(() -> {
-                // 1a. Connect to specified server
-                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
-
-                // 1b. Send message to get all
-                new KVMessageProto(KVMessage.StatusType.DELETE_ALL, Model.toString(filter), 0 /* only 1 request sent over this connection */)
-                        .writeMessageTo(socket.getOutputStream());
-
-                // 1c. Wait for response
-                KVMessageProto response = new KVMessageProto(socket.getInputStream());
-
-                // 1d. Disconnect from server
-                socket.close();
-
-                return response;
-            });
-        }
-
-        List<KVMessage> deletedVals = new ArrayList<>();
-
-        // 2. delete result
+        String lockPath;
         try {
-            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
-                KVMessage res = result.get(5, TimeUnit.MINUTES);
-                logger.debug(String.format("%s", res.getStatus()));
-                deletedVals.add(res);
-            }
-        } catch (Exception e) {
-            throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+            lockPath = ecsServerConnection.lock(false);
+        } catch (IOException e) {
+            throw new KVServerException("Unable to acquire write lock", e, KVMessage.StatusType.FAILED);
         }
 
-        // 3. Filter down relevant results
-        deletedVals = deletedVals.stream()
-                .filter(msg -> msg.getStatus() == KVMessage.StatusType.DELETE_ALL_SUCCESS)
-                .collect(Collectors.toList());
+        try {
+            List<Callable<KVMessage>> tasks = new ArrayList<>();
 
-        if (deletedVals.size() <= 0) {
-            throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_DELETE_ALL_ERROR);
+            // 1. Establish a temporary connection to each server in hash ring as a client and send request
+            for (ECSNode node : ecsServerConnection.getAllServers()) {
+                tasks.add(() -> {
+                    // 1a. Connect to specified server
+                    Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
+
+                    // 1b. Send message to get all
+                    new KVMessageProto(KVMessage.StatusType.DELETE_ALL, Model.toString(filter), 0 /* only 1 request sent over this connection */)
+                            .writeMessageTo(socket.getOutputStream());
+
+                    // 1c. Wait for response
+                    KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                    // 1d. Disconnect from server
+                    socket.close();
+
+                    return response;
+                });
+            }
+
+            List<KVMessage> deletedVals = new ArrayList<>();
+
+            // 2. delete result
+            try {
+                for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                    KVMessage res = result.get(5, TimeUnit.MINUTES);
+                    logger.debug(String.format("%s", res.getStatus()));
+                    deletedVals.add(res);
+                }
+            } catch (Exception e) {
+                throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+            }
+
+            // 3. Filter down relevant results
+            deletedVals = deletedVals.stream()
+                    .filter(msg -> msg.getStatus() == KVMessage.StatusType.DELETE_ALL_SUCCESS)
+                    .collect(Collectors.toList());
+
+            if (deletedVals.size() <= 0) {
+                throw new KVServerException("No keys matching filter", KVMessage.StatusType.COORDINATE_DELETE_ALL_ERROR);
+            }
+        } finally {
+            ecsServerConnection.unlock(lockPath);
         }
     }
 

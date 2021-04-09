@@ -113,7 +113,7 @@ public class ZkECSNode extends ECSNode {
             original = new KVAdminMessageProto(originalBytes);
             if (!original.getSender().equals(request.getSender())) return original;
         } catch (IOException e) {
-            logger.warn("Unable to read response", e);
+            logger.warn("Unable to read response: " + e);
         }
 
         // 2.b) Wait for the response
@@ -129,7 +129,7 @@ public class ZkECSNode extends ECSNode {
         try {
             res = new KVAdminMessageProto(zk.getData(zNode));
         } catch (IOException e) {
-            logger.warn("Unable to read response", e);
+            logger.warn("Unable to read response: " + e);
         }
 
         // 4. Return response

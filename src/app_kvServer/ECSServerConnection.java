@@ -68,6 +68,14 @@ public class ECSServerConnection {
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
     }
 
+    public String lock(boolean isRead) throws IOException {
+        return zkService.lock(ZooKeeperService.DEFAULT_LOCK_NAME, isRead);
+    }
+
+    public void unlock(String lockPath) {
+        zkService.unlock(lockPath);
+    }
+
     public void close() throws IOException {
         THREAD_POOL.shutdownNow();
         this.zkService.close();

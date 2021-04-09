@@ -17,8 +17,8 @@ public class Query extends Model {
      */
     @JsonCreator
     public Query(
-            @JsonProperty(value = "key_filter") String keyFilter,
-            @JsonProperty(value = "value_filter") String valueFilter
+            @JsonProperty(value = "keyFilter") String keyFilter,
+            @JsonProperty(value = "valueFilter") String valueFilter
     ) {
         keyFilter = keyFilter == null ? "" : keyFilter;
         valueFilter = valueFilter == null ? "" : valueFilter;
@@ -48,7 +48,7 @@ public class Query extends Model {
      */
     public static void main(String[] args) throws Exception {
         // 1. Generate test case
-        final String json = Model.toString(Map.of("value_filter", "value_.*"));
+        final String json = Model.toString(Map.of("valueFilter", "value_.*"));
         System.out.println("test = " + json);
 
         // 2. Deserialize from JSON
