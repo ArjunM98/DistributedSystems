@@ -17,6 +17,7 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -67,6 +68,14 @@ public class ECSServerConnection {
         zkService.watchDataForever(ZooKeeperService.ZK_METADATA, this::handleMetadataUpdate);
     }
 
+    public String lock(boolean isRead) throws IOException {
+        return zkService.lock(ZooKeeperService.DEFAULT_LOCK_NAME, isRead);
+    }
+
+    public void unlock(String lockPath) {
+        zkService.unlock(lockPath);
+    }
+
     public void close() throws IOException {
         THREAD_POOL.shutdownNow();
         this.zkService.close();
@@ -85,6 +94,10 @@ public class ECSServerConnection {
         } else {
             return myNode.isResponsibleForKey(key);
         }
+    }
+
+    public List<ECSNode> getAllServers() {
+        return this.allEcsNodes.getAllNodes();
     }
 
     private void handleMetadataUpdate(byte[] input) {

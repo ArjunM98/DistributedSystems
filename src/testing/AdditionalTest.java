@@ -158,7 +158,11 @@ public class AdditionalTest extends TestCase {
         for (int i = 0; i < 100; i++) assertTrue(storage.inStorage("key_" + i));
 
         // Delete even keys
-        storage.deleteIf(kv -> Integer.parseInt(kv.key.substring("key_".length())) % 2 == 0);
+        try {
+            storage.deleteIf(kv -> Integer.parseInt(kv.key.substring("key_".length())) % 2 == 0);
+        } catch (KVServerException e) {
+            e.printStackTrace();
+        }
 
         // Assert only odd keys remaining
         for (int i = 0; i < 100; i++) assertEquals(i % 2 != 0, storage.inStorage("key_" + i));

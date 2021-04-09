@@ -233,9 +233,9 @@ public class HttpTests extends TestCase {
     @Test
     public void testQueryBodyParser() {
         final String
-                fullQuery = "{\"filter\": {\"key_filter\": \"regex\",\"value_filter\": \"regex\"}}",
+                fullQuery = "{\"filter\": {\"keyFilter\": \"regex\",\"valueFilter\": \"regex\"}}",
                 incompleteQuery = "{\"filter\": {}}",
-                invalidQuery = "{\"filter\": {\"key_filter\": \"[unclosed regex\",\"value_filter\": \"regex\"}}";
+                invalidQuery = "{\"filter\": {\"keyFilter\": \"[unclosed regex\",\"valueFilter\": \"regex\"}}";
 
         // 1. Test valid query
         BodySelect query = null;
@@ -265,9 +265,9 @@ public class HttpTests extends TestCase {
     @Test
     public void testRemappingBodyParser() {
         final String
-                fullRemapping = "{\"filter\": {\"key_filter\": \"regex\",\"value_filter\": \"regex\"},\"mapping\": {\"find\": \"regex\",\"replace\": \"replacement\"}}",
-                incompleteRemapping = "{\"filter\": {\"key_filter\": \"regex\",\"value_filter\": \"regex\"},\"mapping\": {}}",
-                invalidRemapping = "{\"filter\": {\"key_filter\": \"regex\",\"value_filter\": \"regex\"},\"mapping\": {\"find\": \"[unclosed regex\",\"replace\": \"replacement\"}}";
+                fullRemapping = "{\"filter\": {\"keyFilter\": \"regex\",\"valueFilter\": \"regex\"},\"mapping\": {\"find\": \"regex\",\"replace\": \"replacement\"}}",
+                incompleteRemapping = "{\"filter\": {\"keyFilter\": \"regex\",\"valueFilter\": \"regex\"},\"mapping\": {}}",
+                invalidRemapping = "{\"filter\": {\"keyFilter\": \"regex\",\"valueFilter\": \"regex\"},\"mapping\": {\"find\": \"[unclosed regex\",\"replace\": \"replacement\"}}";
 
         // 1. Test valid remapping
         BodyUpdate remapping = null;

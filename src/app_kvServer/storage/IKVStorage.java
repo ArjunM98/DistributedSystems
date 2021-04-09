@@ -3,6 +3,7 @@ package app_kvServer.storage;
 import app_kvServer.KVServerException;
 import shared.messages.KVMessage.StatusType;
 
+import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
@@ -55,9 +56,22 @@ public interface IKVStorage {
     public Stream<KVPair> openKvStream(Predicate<KVPair> filter);
 
     /**
+     * Gets all values associated with the regular expression
+     *
+     * @return all values associated with regular expression
+     * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
+     */
+    public List<KVPair> getAllKV(Predicate<KVPair> filter) throws KVServerException;
+
+    /**
+     * Put all key-value pair(s) into storage
+     */
+    public List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl);
+
+    /**
      * Batch deletion of all {@link KVPair}s in storage which match a certain criteria.
      */
-    public void deleteIf(Predicate<KVPair> filter);
+    public void deleteIf(Predicate<KVPair> filter) throws KVServerException;
 
     /**
      * Container class for a key-value pair

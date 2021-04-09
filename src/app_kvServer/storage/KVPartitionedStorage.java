@@ -3,7 +3,9 @@ package app_kvServer.storage;
 import app_kvServer.KVServerException;
 import app_kvServer.balancer.ILoadBalancer;
 import app_kvServer.balancer.ModuloLoadBalancer;
+import shared.messages.KVMessage;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -36,6 +38,28 @@ public class KVPartitionedStorage implements IKVStorage {
     }
 
     @Override
+    public List<KVPair> getAllKV(Predicate<KVPair> filter) throws KVServerException {
+        List<KVPair> allValues = new ArrayList<>();
+        for (KVSingleFileStorage fileStore : stores) {
+            List<KVPair> singeFileVals = fileStore.getAllKV(filter);
+            allValues.addAll(singeFileVals);
+        }
+        if (allValues.size() > 0) return allValues;
+
+        throw new KVServerException("Key(s) not found in storage", KVMessage.StatusType.GET_ALL_ERROR);
+    }
+
+    @Override
+    public List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl) {
+        List<KVPair> allValues = new ArrayList<>();
+        for (KVSingleFileStorage fileStore : stores) {
+            List<KVPair> singleFileVals = fileStore.putAllKV(filter, valExpr, valRepl);
+            allValues.addAll(singleFileVals);
+        }
+        return allValues;
+    }
+
+    @Override
     public void putKV(String key, String value) {
         loadBalancer.balanceRequest(key, stores).putKV(key, value);
     }
@@ -59,8 +83,10 @@ public class KVPartitionedStorage implements IKVStorage {
     }
 
     @Override
-    public void deleteIf(Predicate<KVPair> filter) {
-        stores.forEach(store -> store.deleteIf(filter));
+    public void deleteIf(Predicate<KVPair> filter) throws KVServerException {
+        for (KVSingleFileStorage store : stores) {
+            store.deleteIf(filter);
+        }
     }
 }
 

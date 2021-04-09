@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 public class ZooKeeperService {
     public static final String LOCALHOST_CONNSTR = "localhost:2181";
     public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
+    public static final String DEFAULT_LOCK_NAME = "default";
     private static final Logger logger = Logger.getRootLogger();
     private final ZooKeeper zooKeeper;
 
@@ -243,5 +244,27 @@ public class ZooKeeperService {
             } catch (Exception ignored) {
             }
         };
+    }
+
+    /**
+     * Acquire a global read-write lock.
+     * Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
+     *
+     * @param lockName lock to acquire
+     * @return the path to the lock to be used in {@link #unlock(String)}
+     * @throws IOException on failure
+     */
+    public String lock(String lockName, boolean isRead) throws IOException {
+        logger.warn("Not implemented");
+        return "";
+    }
+
+    /**
+     * Release a global lock. Adapted from https://zookeeper.apache.org/doc/r3.6.2/recipes.html#Shared+Locks
+     *
+     * @param lockPath path to the znode representing the lock to release
+     */
+    public void unlock(String lockPath) {
+        logger.warn("Not implemented");
     }
 }
