@@ -37,7 +37,7 @@ public class QueryScalePerformanceTest extends TestCase {
      * ENRON_MAIL_DIR: path to the *UNCOMPRESSED* dataset
      * ENRON_SUBSET_MAILBOX: path to a mailbox within the dataset to use for our tests
      */
-    private static final String ENRON_MAIL_DIR = "enron_mail_20150507",
+    private static final String ENRON_MAIL_DIR = "/Users/arjunmittal/Documents/git/enron_mail_20150507",
             ENRON_SUBSET_MAILBOX = "dasovich-j/all_documents";
 
     /**
@@ -47,7 +47,7 @@ public class QueryScalePerformanceTest extends TestCase {
      * In total, the server will be hit with NUM_UNIQ_REQS * REQ_DUPLICITY * NUM_CLIENTS requests, though concurrency
      * and caching results may differ as you play around with the 3 vars
      */
-    protected static final int NUM_UNIQ_REQS = 10, REQ_DUPLICITY = 1, NUM_CLIENTS = 20;
+    protected static final int NUM_UNIQ_REQS = 10000, REQ_DUPLICITY = 1, NUM_CLIENTS = 20;
 
     protected static final int CACHE_SIZE = NUM_UNIQ_REQS / 2;
     protected static final IKVServer.CacheStrategy CACHE_STRATEGY = IKVServer.CacheStrategy.FIFO;
@@ -104,11 +104,12 @@ public class QueryScalePerformanceTest extends TestCase {
     @Before
     public void setUp() throws Exception {
         ECS = generateNewServers();
+        ECS.addNodes(1, CACHE_STRATEGY.toString(), CACHE_SIZE);
+        boolean started = ECS.start();
+
         final IECSNode node = ECS.getNodes().values().iterator().next();
         CLIENTS = generateNewClients(node.getNodeHost(), node.getNodePort());
 
-        ECS.addNodes(1, CACHE_STRATEGY.toString(), CACHE_SIZE);
-        boolean started = ECS.start();
         if (!started) {
             throw new Exception("Unable to start all specified servers");
         }
@@ -143,16 +144,16 @@ public class QueryScalePerformanceTest extends TestCase {
             final String TEMP_FILE_NAME = "ecs.tmp.config";
             try (PrintWriter writer = new PrintWriter(new FileWriter(TEMP_FILE_NAME))) {
                 Stream.of(
-                        "server1 ug132 50000",
-                        "server2 ug133 50000",
-                        "server3 ug134 50000",
-                        "server4 ug135 50000",
-                        "server5 ug136 50000",
-                        "server6 ug137 50000",
-                        "server7 ug138 50000",
-                        "server8 ug139 50000",
-                        "server9 ug140 50000",
-                        "server10 ug141 50000"
+                        "server1 localhost 50001",
+                        "server2 localhost 50002",
+                        "server3 localhost 50003",
+                        "server4 localhost 50004",
+                        "server5 localhost 50005",
+                        "server6 localhost 50006",
+                        "server7 localhost 50007",
+                        "server8 localhost 50008",
+                        "server9 localhost 50009",
+                        "server10 localhost 50010"
                 ).forEach(writer::println);
             }
             ecsClient = new ECSClient(TEMP_FILE_NAME, ZooKeeperService.LOCALHOST_CONNSTR);
@@ -186,7 +187,7 @@ public class QueryScalePerformanceTest extends TestCase {
         threadPool.shutdown();
         assertTrue(threadPool.awaitTermination(300, TimeUnit.SECONDS));
 
-        for (int i = 1; i < 6; i++) {
+        for (int i = 1; i < 9; i++) {
             long start;
             // TEST HTTP query: get*
             start = System.nanoTime();

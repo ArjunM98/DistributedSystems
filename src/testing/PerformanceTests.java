@@ -29,6 +29,7 @@ public class PerformanceTests extends TestCase {
         clientSuite.addTestSuite(Server10Client01PerformanceTest.class);
         clientSuite.addTestSuite(Server10Client05PerformanceTest.class);
         clientSuite.addTestSuite(Server10Client20PerformanceTest.class);
+        clientSuite.addTestSuite(QueryScalePerformanceTest.class);
         return clientSuite;
     }
 }

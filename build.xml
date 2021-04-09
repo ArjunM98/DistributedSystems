@@ -167,7 +167,7 @@
 
     <!-- run performance test cases -->
     <target name="performanceTest" depends="build">
-        <junit>
+        <junit showoutput="true">
             <classpath refid="project.classpath"/>
             <formatter type="brief" usefile="false"/>
             <test name="testing.PerformanceTests"/>
