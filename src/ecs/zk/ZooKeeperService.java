@@ -7,6 +7,7 @@ import shared.messages.KVAdminMessage;
 import shared.messages.KVAdminMessageProto;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -14,9 +15,12 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 public class ZooKeeperService {
-    public static final String LOCALHOST_CONNSTR = "localhost:2181";
-    public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data";
     private static final Logger logger = Logger.getRootLogger();
+
+    public static final String LOCALHOST_CONNSTR = "localhost:2181";
+    public static final String ZK_SERVERS = "/workers", ZK_METADATA = "/data", ZK_MUTEX = "/lock";
+    public static final String DEFAULT_LOCK_NAME = "default";
+
     private final ZooKeeper zooKeeper;
 
     /**
@@ -183,6 +187,49 @@ public class ZooKeeperService {
             return zooKeeper.getData(node, generateDeletionWatcher(this, node, onDeleted), null);
         } catch (Exception e) {
             throw new IOException("Could not set deletion watcher", e);
+        }
+    }
+
+    /**
+     * Acquire a global lock. Adapted from https://dzone.com/articles/distributed-lock-using
+     *
+     * @param lockName lock to acquire
+     * @return the path to the lock to be used in {@link #unlock(String)}
+     * @throws IOException on failure
+     */
+    public String lock(String lockName) throws IOException {
+        try {
+            String lockPath = zooKeeper.create(ZK_MUTEX + "/" + lockName, null, ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.EPHEMERAL_SEQUENTIAL);
+            final Object lock = new Object();
+            synchronized (lock) {
+                while (true) {
+                    List<String> nodes = zooKeeper.getChildren(ZK_MUTEX, event -> {
+                        synchronized (lock) {
+                            lock.notifyAll();
+                        }
+                    });
+                    Collections.sort(nodes);
+
+                    if (lockPath.endsWith(nodes.get(0))) return lockPath;
+                    else lock.wait();
+                }
+            }
+        } catch (KeeperException | InterruptedException e) {
+            throw new IOException(e);
+        }
+    }
+
+    /**
+     * Release a global lock. Adapted from https://dzone.com/articles/distributed-lock-using
+     *
+     * @param lockPath path to the znode representing the lock to release
+     * @throws IOException on failure
+     */
+    public void unlock(String lockPath) throws IOException {
+        try {
+            zooKeeper.delete(lockPath, -1);
+        } catch (KeeperException | InterruptedException e) {
+            throw new IOException(e);
         }
     }
 
