@@ -17,6 +17,7 @@ import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -85,6 +86,10 @@ public class ECSServerConnection {
         } else {
             return myNode.isResponsibleForKey(key);
         }
+    }
+
+    public List<ECSNode> getAllServers() {
+        return this.allEcsNodes.getAllNodes();
     }
 
     private void handleMetadataUpdate(byte[] input) {

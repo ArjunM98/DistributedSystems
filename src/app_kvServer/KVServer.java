@@ -6,26 +6,24 @@ import app_kvServer.replication.PrimaryServerConnectionManager;
 import app_kvServer.storage.IKVStorage;
 import app_kvServer.storage.IKVStorage.KVPair;
 import app_kvServer.storage.KVPartitionedStorage;
+import ecs.ECSNode;
 import logger.LogSetup;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import shared.ObjectFactory;
 import shared.Utilities;
 import shared.messages.KVMessage;
+import shared.messages.KVMessageProto;
 
 import java.io.IOException;
 import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class KVServer extends Thread implements IKVServer {
@@ -38,14 +36,12 @@ public class KVServer extends Thread implements IKVServer {
 
     private final ExecutorService threadPool;
     private final Set<ClientConnection> activeConnections;
+    private final ECSServerConnection ecsServerConnection;
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private ServerSocket serverSocket;
     private ECSServerConnection.State state;
-    private final ECSServerConnection ecsServerConnection;
-
     private BackupServersConnectionManager backupServersConnectionManager;
     private PrimaryServerConnectionManager primaryServerConnectionManager;
-
-    private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     /**
      * Start KV Server at given port
@@ -85,6 +81,71 @@ public class KVServer extends Thread implements IKVServer {
         }
 
         this.start();
+    }
+
+    /**
+     * Main entry point for the KVServer application.
+     *
+     * @param args contains [portNumber, name, zkConn [, cacheSize, policy, logLevel]]
+     */
+    public static void main(String[] args) {
+        // 0. Default args
+        int portNumber, cacheSize = 10;
+        String name;
+        String connectionString;
+        String policy = "FIFO";
+        Level logLevel = Level.ALL;
+
+        // 1. Validate args
+        try {
+            switch (args.length) {
+                case 6:
+                    String candidateLevel = args[5].toUpperCase();
+                    if (!LogSetup.isValidLevel(candidateLevel))
+                        throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
+                    logLevel = Level.toLevel(candidateLevel, logLevel);
+                case 5:
+                    String candidatePolicy = args[4].toUpperCase();
+                    if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
+                        throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
+                    policy = candidatePolicy;
+                case 4:
+                    try {
+                        cacheSize = Integer.parseInt(args[3]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
+                    }
+                case 3:
+                    name = args[1];
+                    connectionString = args[2];
+                    try {
+                        portNumber = Integer.parseInt(args[0]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid port number '%s'", args[0]));
+                    }
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid number of arguments");
+            }
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e);
+            System.err.println("Usage: Server <port> <name> <connectionString> [<cachesize> <cachepolicy> <loglevel>]");
+            System.exit(1);
+            return;
+        }
+
+        // 2. Initialize logger
+        try {
+            new LogSetup("logs/" + name + "_" + System.currentTimeMillis() + ".log", logLevel);
+        } catch (IOException e) {
+            System.err.println("Logger error: " + e);
+            System.exit(1);
+            return;
+        }
+
+        // 3. Run server and respond to ctrl-c and kill
+        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, name, connectionString, cacheSize, policy);
+        Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 
     public void updateServerState(ECSServerConnection.State newState) {
@@ -161,6 +222,136 @@ public class KVServer extends Thread implements IKVServer {
         }
     }
 
+    public String coordinateGetAllKV(String expr) throws KVServerException {
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        List<Callable<KVMessage>> tasks = new ArrayList<>();
+
+        // 1. Establish a temporary connection to each server in hash ring as a client and send request
+        for (ECSNode node : ecsServerConnection.getAllServers()) {
+            tasks.add(() -> {
+                // 1a. Connect to specified server
+                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
+
+                // 1b. Send message to get all
+                new KVMessageProto(KVMessage.StatusType.GET_ALL, expr, 0 /* only 1 request sent over this connection */)
+                        .writeMessageTo(socket.getOutputStream());
+
+                // 1c. Wait for response
+                KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                // 1d. Disconnect from server
+                socket.close();
+
+                return response;
+            });
+        }
+
+        List<KVMessage> allPairs = new ArrayList<>();
+
+        // 2. Get result
+        try {
+            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                KVMessage res = result.get(5, TimeUnit.MINUTES);
+                logger.debug(String.format("%s", res.getStatus()));
+                allPairs.add(res);
+            }
+        } catch (Exception e) {
+            throw new KVServerException("Unable to gather all relevant keys", e, KVMessage.StatusType.FAILED);
+        }
+
+        allPairs = allPairs.stream()
+                .filter(msg -> msg.getStatus() == KVMessage.StatusType.GET_ALL_SUCCESS)
+                .collect(Collectors.toList());
+
+        if (allPairs.size() > 0) return allPairs.stream().map(KVMessage::getValue).collect(Collectors.joining("/n"));
+
+        throw new KVServerException(String.format("No mapping for key '%s'", expr), KVMessage.StatusType.COORDINATE_GET_ALL_ERROR);
+    }
+
+    @Override
+    public String getAllKV(String expr) throws KVServerException {
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        try {
+            List<KVPair> value;
+
+            if ((value = storage.getAllKV(kvPair ->
+                    kvPair.key.matches(expr) && ecsServerConnection.isResponsibleForKey(kvPair.key, false))) != null) {
+                return value.stream().map(IKVStorage.KVPair::serialize)
+                        .collect(Collectors.joining("/n"));
+            }
+
+            logger.debug("Unable to find any keys with expression");
+            throw new KVServerException(String.format("No mapping for key '%s'", expr), KVMessage.StatusType.GET_ALL_ERROR);
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing regex expression '%s'", expr), e, KVMessage.StatusType.FAILED);
+        }
+    }
+
+    public String coordinatePutAllKV(String expr, String regVal, String regRepl) throws KVServerException {
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (state == ECSServerConnection.State.LOCKED) {
+            throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
+        }
+
+        // TODO: ACQUIRE WRITE LOCK
+
+        List<Callable<KVMessage>> tasks = new ArrayList<>();
+
+        // 1. Establish a temporary connection to each server in hash ring as a client and send request
+        for (ECSNode node : ecsServerConnection.getAllServers()) {
+            tasks.add(() -> {
+                // 1a. Connect to specified server
+                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
+
+                // 1b. Send message to get all
+                new KVMessageProto(KVMessage.StatusType.PUT_ALL, expr, regVal + " " + regRepl, 0 /* only 1 request sent over this connection */)
+                        .writeMessageTo(socket.getOutputStream());
+
+                // 1c. Wait for response
+                KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                // 1d. Disconnect from server
+                socket.close();
+
+                return response;
+            });
+        }
+
+        List<KVMessage> allUpdatedVals = new ArrayList<>();
+
+        // 2. Put result
+        try {
+            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                KVMessage res = result.get(5, TimeUnit.MINUTES);
+                logger.debug(String.format("%s", res.getStatus()));
+                allUpdatedVals.add(res);
+            }
+        } catch (Exception e) {
+            throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+        }
+
+        // 3. Filter down relevant results
+        allUpdatedVals = allUpdatedVals.stream()
+                .filter(msg -> msg.getStatus() == KVMessage.StatusType.PUT_ALL_SUCCESS)
+                .collect(Collectors.toList());
+
+        if (allUpdatedVals.size() > 0)
+            return allUpdatedVals.stream().map(KVMessage::getValue).collect(Collectors.joining("/n"));
+
+        throw new KVServerException(String.format("No mapping for key '%s'", expr), KVMessage.StatusType.COORDINATE_PUT_ALL_ERROR);
+    }
+
     @Override
     public void putKV(String key, String value) throws KVServerException {
         if (state == ECSServerConnection.State.STOPPED) {
@@ -198,6 +389,118 @@ public class KVServer extends Thread implements IKVServer {
             throw e;
         } catch (Exception e) {
             throw new KVServerException(String.format("Unknown error processing key '%s'", key), e, KVMessage.StatusType.FAILED);
+        }
+    }
+
+    @Override
+    public String putAllKV(String expr, String regVal, String regRepl) throws KVServerException {
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (state == ECSServerConnection.State.LOCKED) {
+            throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
+        }
+
+        // Clear cache to get rid of stale values
+        cache.clearCache();
+
+        try {
+            List<KVPair> value;
+
+            if ((value = storage.putAllKV(kvPair ->
+                    kvPair.key.matches(expr), regVal, regRepl)).size() > 0) {
+                // Only send back keys where you are the primary
+                return value.stream()
+                        .filter(kv -> ecsServerConnection.isResponsibleForKey(kv.key, false))
+                        .map(IKVStorage.KVPair::serialize)
+                        .collect(Collectors.joining("/n"));
+            }
+
+            logger.debug("Unable to find any keys with expression");
+            throw new KVServerException(String.format("No mapping for key '%s'", expr), KVMessage.StatusType.PUT_ALL_ERROR);
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing regex expression '%s'", expr), e, KVMessage.StatusType.FAILED);
+        }
+    }
+
+    public void deleteAll(String keyFilter) throws KVServerException {
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (state == ECSServerConnection.State.LOCKED) {
+            throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
+        }
+
+        cache.clearCache(); // expensive af but much simpler than actually pruning cache
+
+        try {
+            storage.deleteIf(kvPair -> kvPair.key.matches(keyFilter));
+        } catch (KVServerException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new KVServerException(String.format("Unknown error processing regex expression '%s'", keyFilter), e, KVMessage.StatusType.FAILED);
+        }
+
+    }
+
+    public void coordinateDeleteAllKV(String keyFilter) throws KVServerException {
+
+        if (state == ECSServerConnection.State.STOPPED) {
+            throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
+        }
+
+        if (state == ECSServerConnection.State.LOCKED) {
+            throw new KVServerException("Server is locked for writes", KVMessage.StatusType.SERVER_WRITE_LOCK);
+        }
+
+        // TODO: ACQUIRE WRITE LOCK
+
+        List<Callable<KVMessage>> tasks = new ArrayList<>();
+
+        // 1. Establish a temporary connection to each server in hash ring as a client and send request
+        for (ECSNode node : ecsServerConnection.getAllServers()) {
+            tasks.add(() -> {
+                // 1a. Connect to specified server
+                Socket socket = new Socket(node.getNodeHost(), node.getNodePort());
+
+                // 1b. Send message to get all
+                new KVMessageProto(KVMessage.StatusType.DELETE_ALL, keyFilter, 0 /* only 1 request sent over this connection */)
+                        .writeMessageTo(socket.getOutputStream());
+
+                // 1c. Wait for response
+                KVMessageProto response = new KVMessageProto(socket.getInputStream());
+
+                // 1d. Disconnect from server
+                socket.close();
+
+                return response;
+            });
+        }
+
+        List<KVMessage> deletedVals = new ArrayList<>();
+
+        // 2. delete result
+        try {
+            for (Future<KVMessage> result : threadPool.invokeAll(tasks, 5, TimeUnit.MINUTES)) {
+                KVMessage res = result.get(5, TimeUnit.MINUTES);
+                logger.debug(String.format("%s", res.getStatus()));
+                deletedVals.add(res);
+            }
+        } catch (Exception e) {
+            throw new KVServerException("Unable to update all relevant keys", e, KVMessage.StatusType.FAILED);
+        }
+
+        // 3. Filter down relevant results
+        deletedVals = deletedVals.stream()
+                .filter(msg -> msg.getStatus() == KVMessage.StatusType.DELETE_ALL_SUCCESS)
+                .collect(Collectors.toList());
+
+        if (deletedVals.size() <= 0) {
+            throw new KVServerException(String.format("No mapping for key '%s'", keyFilter), KVMessage.StatusType.COORDINATE_DELETE_ALL_ERROR);
         }
     }
 
@@ -336,7 +639,11 @@ public class KVServer extends Thread implements IKVServer {
      * See {@link IKVStorage#deleteIf(Predicate)}
      */
     public void deleteIf(Predicate<KVPair> filter) {
-        storage.deleteIf(filter);
+        try {
+            storage.deleteIf(filter);
+        } catch (KVServerException e) {
+            logger.error("Unable to clear designated KV", e);
+        }
         cache.clearCache(); // expensive af but much simpler than actually pruning cache
     }
 
@@ -372,70 +679,5 @@ public class KVServer extends Thread implements IKVServer {
         } catch (KVServerException e) {
             logger.info(String.format("Error ingesting kv '%s'", kv.key));
         }
-    }
-
-    /**
-     * Main entry point for the KVServer application.
-     *
-     * @param args contains [portNumber, name, zkConn [, cacheSize, policy, logLevel]]
-     */
-    public static void main(String[] args) {
-        // 0. Default args
-        int portNumber, cacheSize = 10;
-        String name;
-        String connectionString;
-        String policy = "FIFO";
-        Level logLevel = Level.ALL;
-
-        // 1. Validate args
-        try {
-            switch (args.length) {
-                case 6:
-                    String candidateLevel = args[5].toUpperCase();
-                    if (!LogSetup.isValidLevel(candidateLevel))
-                        throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
-                    logLevel = Level.toLevel(candidateLevel, logLevel);
-                case 5:
-                    String candidatePolicy = args[4].toUpperCase();
-                    if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
-                        throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
-                    policy = candidatePolicy;
-                case 4:
-                    try {
-                        cacheSize = Integer.parseInt(args[3]);
-                    } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
-                    }
-                case 3:
-                    name = args[1];
-                    connectionString = args[2];
-                    try {
-                        portNumber = Integer.parseInt(args[0]);
-                    } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException(String.format("Invalid port number '%s'", args[0]));
-                    }
-                    break;
-                default:
-                    throw new IllegalArgumentException("Invalid number of arguments");
-            }
-        } catch (IllegalArgumentException e) {
-            System.err.println("Error: " + e);
-            System.err.println("Usage: Server <port> <name> <connectionString> [<cachesize> <cachepolicy> <loglevel>]");
-            System.exit(1);
-            return;
-        }
-
-        // 2. Initialize logger
-        try {
-            new LogSetup("logs/" + name + "_" + System.currentTimeMillis() + ".log", logLevel);
-        } catch (IOException e) {
-            System.err.println("Logger error: " + e);
-            System.exit(1);
-            return;
-        }
-
-        // 3. Run server and respond to ctrl-c and kill
-        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, name, connectionString, cacheSize, policy);
-        Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 }

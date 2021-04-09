@@ -87,6 +87,18 @@ public class ClientConnection implements Runnable {
 
             logger.debug("Responding to request " + reqId + " on " + server.getPort());
             switch (req.getStatus()) {
+                case GET_ALL:
+                    return handleGetAll(req);
+                case COORDINATE_GET_ALL:
+                    return handleCoordinateGetAll(req);
+                case PUT_ALL:
+                    return handlePutAll(req);
+                case COORDINATE_PUT_ALL:
+                    return handleCoordinatePutAll(req);
+                case DELETE_ALL:
+                    return handleDeleteAll(req);
+                case COORDINATE_DELETE_ALL:
+                    return handleCoordinateDeleteAll(req);
                 case GET:
                     return handleGet(req);
                 case PUT:
@@ -123,6 +135,45 @@ public class ClientConnection implements Runnable {
     }
 
     /**
+     * Helper function to handle a coordinator request for getting KV(s)
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error
+     */
+    private KVMessageProto handleCoordinateGetAll(KVMessageProto req) throws KVServerException {
+        try {
+            String val = server.coordinateGetAllKV(req.getKey());
+            return new KVMessageProto(StatusType.COORDINATE_GET_ALL_SUCCESS, req.getKey(), val, req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.COORDINATE_GET_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.COORDINATE_GET_ALL_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.COORDINATE_GET_ALL_ERROR, req.getKey(), req.getId());
+        }
+    }
+
+    /**
+     * Helper function to handle GET_ALL request
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error
+     */
+    private KVMessageProto handleGetAll(KVMessageProto req) throws KVServerException {
+        try {
+            String val = server.getAllKV(req.getKey());
+            return new KVMessageProto(StatusType.GET_ALL_SUCCESS, req.getKey(), val, req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.GET_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.GET_ALL_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.GET_ALL_ERROR, req.getKey(), req.getId());
+        }
+    }
+
+
+    /**
      * Helps clean up {@link #handleRequest(InputStream)}
      *
      * @param req request to process
@@ -147,6 +198,46 @@ public class ClientConnection implements Runnable {
     }
 
     /**
+     * Helper function to handle a coordinator request for updating KV(s)
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error
+     */
+    private KVMessageProto handleCoordinatePutAll(KVMessageProto req) throws KVServerException {
+        try {
+            String[] reqVal = req.getValue().split(" ", 2);
+            String val = server.coordinatePutAllKV(req.getKey(), reqVal[0], reqVal[1]);
+            return new KVMessageProto(StatusType.COORDINATE_PUT_ALL_SUCCESS, req.getKey(), val, req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.COORDINATE_PUT_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.COORDINATE_PUT_ALL_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.COORDINATE_PUT_ALL_ERROR, req.getKey(), req.getId());
+        }
+    }
+
+    /**
+     * Helper function to handle PUT_ALL request
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error
+     */
+    private KVMessageProto handlePutAll(KVMessageProto req) throws KVServerException {
+        try {
+            String[] reqVal = req.getValue().split(" ", 2);
+            String val = server.putAllKV(req.getKey(), reqVal[0], reqVal[1]);
+            return new KVMessageProto(StatusType.PUT_ALL_SUCCESS, req.getKey(), val, req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.PUT_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.PUT_ALL_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.PUT_ALL_ERROR, req.getKey(), req.getId());
+        }
+    }
+
+    /**
      * Helps clean up {@link #handleRequest(InputStream)}
      *
      * @param req request to process
@@ -162,6 +253,44 @@ public class ClientConnection implements Runnable {
             return new KVMessageProto(StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
         } catch (Exception e) {
             return new KVMessageProto(StatusType.DELETE_ERROR, req.getKey(), req.getValue(), req.getId());
+        }
+    }
+
+    /**
+     * Helper function to handle DELETE_ALL request
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error (e.g. {@link StatusType#SERVER_NOT_RESPONSIBLE})
+     */
+    private KVMessageProto handleDeleteAll(KVMessageProto req) throws KVServerException {
+        try {
+            server.deleteAll(req.getKey());
+            return new KVMessageProto(StatusType.DELETE_ALL_SUCCESS, req.getKey(), req.getValue(), req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.DELETE_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.DELETE_ALL_ERROR, req.getKey(), req.getValue(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.DELETE_ALL_ERROR, req.getKey(), req.getValue(), req.getId());
+        }
+    }
+
+    /**
+     * Helper function to handle a coordinator request for deleting KV(s)
+     *
+     * @param req request to process
+     * @return KVMessageProto response to send to client
+     * @throws KVServerException to communicate an expected general error
+     */
+    private KVMessageProto handleCoordinateDeleteAll(KVMessageProto req) throws KVServerException {
+        try {
+            server.coordinateDeleteAllKV(req.getKey());
+            return new KVMessageProto(StatusType.COORDINATE_DELETE_ALL_SUCCESS, req.getKey(), req.getId());
+        } catch (KVServerException e) {
+            if (e.getErrorCode() != StatusType.COORDINATE_DELETE_ALL_ERROR) throw e;
+            return new KVMessageProto(StatusType.COORDINATE_DELETE_ALL_ERROR, req.getKey(), req.getId());
+        } catch (Exception e) {
+            return new KVMessageProto(StatusType.COORDINATE_DELETE_ALL_ERROR, req.getKey(), req.getId());
         }
     }
 }

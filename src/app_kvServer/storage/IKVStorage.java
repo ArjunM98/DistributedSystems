@@ -3,11 +3,12 @@ package app_kvServer.storage;
 import app_kvServer.KVServerException;
 import shared.messages.KVMessage.StatusType;
 
+import java.util.List;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public interface IKVStorage {
-    public static final String STORAGE_ROOT_DIRECTORY = "data";
+    String STORAGE_ROOT_DIRECTORY = "data";
 
     /**
      * Check if key is in storage.
@@ -15,7 +16,7 @@ public interface IKVStorage {
      *
      * @return true if key in storage, false otherwise
      */
-    public boolean inStorage(String key);
+    boolean inStorage(String key);
 
     /**
      * Get the value associated with the key
@@ -23,26 +24,39 @@ public interface IKVStorage {
      * @return value associated with key
      * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
      */
-    public String getKV(String key) throws KVServerException;
+    String getKV(String key) throws KVServerException;
+
+    /**
+     * Gets all values associated with the regular expression
+     *
+     * @return all values associated with regular expression
+     * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
+     */
+    List<KVPair> getAllKV(Predicate<KVPair> filter) throws KVServerException;
 
     /**
      * Put the key-value pair into storage
      *
      * @throws KVServerException e.g. for {@link StatusType#PUT_ERROR}, {@link StatusType#FAILED}
      */
-    public void putKV(String key, String value) throws KVServerException;
+    void putKV(String key, String value) throws KVServerException;
+
+    /**
+     * Put all key-value pair(s) into storage
+     */
+    List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl);
 
     /**
      * Delete key-value pair from storage
      *
      * @throws KVServerException e.g. for {@link StatusType#DELETE_ERROR}, {@link StatusType#FAILED}
      */
-    public void delete(String key) throws KVServerException;
+    void delete(String key) throws KVServerException;
 
     /**
      * Clear the storage of the server
      */
-    public void clearStorage();
+    void clearStorage();
 
     /**
      * Get a stream of all {@link KVPair}s in storage which match a certain criteria.
@@ -52,12 +66,12 @@ public interface IKVStorage {
      *
      * @return {@link Stream} of {@link KVPair} (ideally lazily populated) or empty stream on error
      */
-    public Stream<KVPair> openKvStream(Predicate<KVPair> filter);
+    Stream<KVPair> openKvStream(Predicate<KVPair> filter);
 
     /**
      * Batch deletion of all {@link KVPair}s in storage which match a certain criteria.
      */
-    public void deleteIf(Predicate<KVPair> filter);
+    void deleteIf(Predicate<KVPair> filter) throws KVServerException;
 
     /**
      * Container class for a key-value pair
@@ -82,13 +96,6 @@ public interface IKVStorage {
         }
 
         /**
-         * @return serialized string for KVPair
-         */
-        public String serialize() {
-            return this.tombstone.marker + this.key + KV_DELIMITER + this.value;
-        }
-
-        /**
          * @param serialized see {@link #serialize()}
          * @return deserialized instance of {@link KVPair} or null on failure
          */
@@ -100,6 +107,13 @@ public interface IKVStorage {
                     serialized.substring(1, split),
                     serialized.substring(split + 1)
             );
+        }
+
+        /**
+         * @return serialized string for KVPair
+         */
+        public String serialize() {
+            return this.tombstone.marker + this.key + KV_DELIMITER + this.value;
         }
 
         public enum Tombstone {

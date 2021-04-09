@@ -1,5 +1,9 @@
 package app_kvServer;
 
+import app_kvServer.storage.IKVStorage;
+
+import java.util.List;
+
 public interface IKVServer {
     public enum CacheStrategy {
         None,
@@ -53,6 +57,20 @@ public interface IKVServer {
      *      when key not in the key range of the server
      */
     public String getKV(String key) throws Exception;
+
+    /**
+     * Get all values associated with the regular expression
+     *
+     * @throws Exception when server is not responsible for any key in regards to expression
+     */
+    public String getAllKV(String expr) throws Exception;
+
+    /**
+     * Updates all values associated with the regular expression to the regRepl based on regVal
+     *
+     * @throws Exception when server is not responsible for any key in regards to expression
+     */
+    public String putAllKV(String expr, String regVal, String regRepl) throws Exception;
 
     /**
      * Put the key-value pair into storage
