@@ -239,7 +239,7 @@ public class ZooKeeperService {
                     }
                     Collections.sort(nodes);
 
-                    if (getEphemeralSequenceNum(lockPath) <= getEphemeralSequenceNum(nodes.get(0))) {
+                    if (nodes.isEmpty() || getEphemeralSequenceNum(lockPath) <= getEphemeralSequenceNum(nodes.get(0))) {
                         return lockPath;
                     } else {
                         // 4,5,6. Go back to step 2
