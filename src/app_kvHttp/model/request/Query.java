@@ -25,8 +25,8 @@ public class Query extends Model {
         if (keyFilter.isEmpty() && valueFilter.isEmpty()) {
             throw new IllegalArgumentException("At least one filter must be specified");
         }
-        this.keyFilter = Pattern.compile(keyFilter);
-        this.valueFilter = Pattern.compile(valueFilter);
+        this.keyFilter = Pattern.compile(keyFilter.isEmpty() ? ".*" : keyFilter);
+        this.valueFilter = Pattern.compile(valueFilter.isEmpty() ? ".*" : valueFilter);
     }
 
     /**

@@ -3,6 +3,7 @@ package app_kvHttp.controller;
 import app_kvHttp.model.Model;
 import app_kvHttp.model.response.KV;
 import app_kvHttp.model.response.Status;
+import app_kvServer.storage.IKVStorage;
 import com.fasterxml.jackson.core.JacksonException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -14,6 +15,7 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.nio.charset.Charset;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static shared.messages.KVMessageProto.CLIENT_ERROR_KEY;
 
@@ -104,9 +106,29 @@ public abstract class Handler implements HttpHandler {
                 case PUT_SUCCESS:
                     // 201
                     return ApiResponse.of(HttpURLConnection.HTTP_CREATED, new KV(kvMessage.getKey(), kvMessage.getValue()));
+                case COORDINATE_GET_ALL_SUCCESS:
+                    // 200
+                    return ApiResponse.of(HttpURLConnection.HTTP_OK, kvMessage.getValue().lines()
+                            .map(IKVStorage.KVPair::deserialize)
+                            .filter(Objects::nonNull)
+                            .map(kv -> new KV(kv.key, kv.value))
+                            .collect(Collectors.toList()));
+                case COORDINATE_PUT_ALL_SUCCESS:
+                    // 201
+                    return ApiResponse.of(HttpURLConnection.HTTP_CREATED, kvMessage.getValue().lines()
+                            .map(IKVStorage.KVPair::deserialize)
+                            .filter(Objects::nonNull)
+                            .map(kv -> new KV(kv.key, kv.value))
+                            .collect(Collectors.toList()));
+                case COORDINATE_DELETE_ALL_SUCCESS:
+                    // 200
+                    return ApiResponse.of(HttpURLConnection.HTTP_OK, status);
                 case GET_ERROR:
                 case PUT_ERROR:
                 case DELETE_ERROR:
+                case COORDINATE_GET_ALL_ERROR:
+                case COORDINATE_PUT_ALL_ERROR:
+                case COORDINATE_DELETE_ALL_ERROR:
                     // 404
                     return ApiResponse.of(HttpURLConnection.HTTP_NOT_FOUND, status);
                 case FAILED:

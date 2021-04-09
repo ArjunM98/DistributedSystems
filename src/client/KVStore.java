@@ -250,7 +250,7 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    public KVMessage deleteAll(Query filter) throws Exception {
+    public KVMessage deleteAll(Query filter) throws IOException {
         long messageId = msgID.get();
         final String filterString = Model.toString(filter);
 
@@ -316,7 +316,7 @@ public class KVStore implements KVCommInterface {
     }
 
     private String validatedValue(String value) {
-        value = value == null ? "null" : value;
+        value = value == null ? "null" : value.replaceAll("\n", "");
         if (value.length() > KVMessageProto.MAX_VALUE_SIZE)
             throw new IllegalArgumentException(String.format("Max value length is %d Bytes", KVMessageProto.MAX_VALUE_SIZE));
         return value;

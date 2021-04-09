@@ -173,7 +173,7 @@ paths:
         required: true
       responses:
         '200':
-          description: StatusType.GET_SUCCESS
+          description: StatusType.COORDINATE_GET_ALL_SUCCESS
           content:
             application/json:
               schema:
@@ -187,7 +187,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusType'
         '404':
-          description: StatusType.GET_ERROR
+          description: StatusType.COORDINATE_GET_ALL_ERROR
           content:
             application/json:
               schema:
@@ -219,7 +219,7 @@ paths:
         required: true
       responses:
         '200':
-          description: StatusType.DELETE_SUCCESS
+          description: StatusType.COORDINATE_DELETE_ALL_SUCCESS
           content:
             application/json:
               schema:
@@ -233,7 +233,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusType'
         '404':
-          description: StatusType.DELETE_ERROR
+          description: StatusType.COORDINATE_GET_ALL_ERROR
           content:
             application/json:
               schema:
@@ -265,7 +265,7 @@ paths:
         required: true
       responses:
         '201':
-          description: StatusType.PUT_UPDATE
+          description: StatusType.COORDINATE_PUT_ALL_SUCCESS
           content:
             application/json:
               schema:
@@ -279,7 +279,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusType'
         '404':
-          description: StatusType.PUT_ERROR
+          description: StatusType.COORDINATE_PUT_ALL_ERROR
           content:
             application/json:
               schema:
