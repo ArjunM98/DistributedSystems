@@ -193,7 +193,6 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    @Override
     public KVMessage getAll(String keyFilter) throws IOException {
         long messageId = msgID.get();
 
@@ -221,7 +220,6 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    @Override
     public KVMessage putAll(String keyFilter, String valueExp, String valueRepl) throws IOException {
         long messageId = msgID.get();
 
@@ -250,7 +248,6 @@ public class KVStore implements KVCommInterface {
         return new KVMessageProto(KVMessage.StatusType.FAILED, KVMessageProto.CLIENT_ERROR_KEY, String.format("Exceeded MAX_RETRIES (%d)", MAX_RETRIES), messageId);
     }
 
-    @Override
     public KVMessage deleteAll(String keyFilter) throws Exception {
         long messageId = msgID.get();
 

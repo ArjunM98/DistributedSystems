@@ -36,12 +36,14 @@ public class KVServer extends Thread implements IKVServer {
 
     private final ExecutorService threadPool;
     private final Set<ClientConnection> activeConnections;
-    private final ECSServerConnection ecsServerConnection;
-    private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private ServerSocket serverSocket;
     private ECSServerConnection.State state;
+    private final ECSServerConnection ecsServerConnection;
+
     private BackupServersConnectionManager backupServersConnectionManager;
     private PrimaryServerConnectionManager primaryServerConnectionManager;
+
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
     /**
      * Start KV Server at given port
@@ -81,71 +83,6 @@ public class KVServer extends Thread implements IKVServer {
         }
 
         this.start();
-    }
-
-    /**
-     * Main entry point for the KVServer application.
-     *
-     * @param args contains [portNumber, name, zkConn [, cacheSize, policy, logLevel]]
-     */
-    public static void main(String[] args) {
-        // 0. Default args
-        int portNumber, cacheSize = 10;
-        String name;
-        String connectionString;
-        String policy = "FIFO";
-        Level logLevel = Level.ALL;
-
-        // 1. Validate args
-        try {
-            switch (args.length) {
-                case 6:
-                    String candidateLevel = args[5].toUpperCase();
-                    if (!LogSetup.isValidLevel(candidateLevel))
-                        throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
-                    logLevel = Level.toLevel(candidateLevel, logLevel);
-                case 5:
-                    String candidatePolicy = args[4].toUpperCase();
-                    if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
-                        throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
-                    policy = candidatePolicy;
-                case 4:
-                    try {
-                        cacheSize = Integer.parseInt(args[3]);
-                    } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
-                    }
-                case 3:
-                    name = args[1];
-                    connectionString = args[2];
-                    try {
-                        portNumber = Integer.parseInt(args[0]);
-                    } catch (NumberFormatException e) {
-                        throw new IllegalArgumentException(String.format("Invalid port number '%s'", args[0]));
-                    }
-                    break;
-                default:
-                    throw new IllegalArgumentException("Invalid number of arguments");
-            }
-        } catch (IllegalArgumentException e) {
-            System.err.println("Error: " + e);
-            System.err.println("Usage: Server <port> <name> <connectionString> [<cachesize> <cachepolicy> <loglevel>]");
-            System.exit(1);
-            return;
-        }
-
-        // 2. Initialize logger
-        try {
-            new LogSetup("logs/" + name + "_" + System.currentTimeMillis() + ".log", logLevel);
-        } catch (IOException e) {
-            System.err.println("Logger error: " + e);
-            System.exit(1);
-            return;
-        }
-
-        // 3. Run server and respond to ctrl-c and kill
-        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, name, connectionString, cacheSize, policy);
-        Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 
     public void updateServerState(ECSServerConnection.State newState) {
@@ -271,7 +208,6 @@ public class KVServer extends Thread implements IKVServer {
         throw new KVServerException(String.format("No mapping for key '%s'", expr), KVMessage.StatusType.COORDINATE_GET_ALL_ERROR);
     }
 
-    @Override
     public String getAllKV(String expr) throws KVServerException {
         if (state == ECSServerConnection.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
@@ -392,7 +328,6 @@ public class KVServer extends Thread implements IKVServer {
         }
     }
 
-    @Override
     public String putAllKV(String expr, String regVal, String regRepl) throws KVServerException {
         if (state == ECSServerConnection.State.STOPPED) {
             throw new KVServerException("Server is in STOPPED state", KVMessage.StatusType.SERVER_STOPPED);
@@ -679,5 +614,70 @@ public class KVServer extends Thread implements IKVServer {
         } catch (KVServerException e) {
             logger.info(String.format("Error ingesting kv '%s'", kv.key));
         }
+    }
+
+    /**
+     * Main entry point for the KVServer application.
+     *
+     * @param args contains [portNumber, name, zkConn [, cacheSize, policy, logLevel]]
+     */
+    public static void main(String[] args) {
+        // 0. Default args
+        int portNumber, cacheSize = 10;
+        String name;
+        String connectionString;
+        String policy = "FIFO";
+        Level logLevel = Level.ALL;
+
+        // 1. Validate args
+        try {
+            switch (args.length) {
+                case 6:
+                    String candidateLevel = args[5].toUpperCase();
+                    if (!LogSetup.isValidLevel(candidateLevel))
+                        throw new IllegalArgumentException(String.format("Invalid log level '%s'", candidateLevel));
+                    logLevel = Level.toLevel(candidateLevel, logLevel);
+                case 5:
+                    String candidatePolicy = args[4].toUpperCase();
+                    if (Arrays.stream(CacheStrategy.values()).noneMatch(e -> e.name().equals(candidatePolicy)))
+                        throw new IllegalArgumentException(String.format("Invalid cache policy '%s'", candidatePolicy));
+                    policy = candidatePolicy;
+                case 4:
+                    try {
+                        cacheSize = Integer.parseInt(args[3]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid cache size '%s'", args[1]));
+                    }
+                case 3:
+                    name = args[1];
+                    connectionString = args[2];
+                    try {
+                        portNumber = Integer.parseInt(args[0]);
+                    } catch (NumberFormatException e) {
+                        throw new IllegalArgumentException(String.format("Invalid port number '%s'", args[0]));
+                    }
+                    break;
+                default:
+                    throw new IllegalArgumentException("Invalid number of arguments");
+            }
+        } catch (IllegalArgumentException e) {
+            System.err.println("Error: " + e);
+            System.err.println("Usage: Server <port> <name> <connectionString> [<cachesize> <cachepolicy> <loglevel>]");
+            System.exit(1);
+            return;
+        }
+
+        // 2. Initialize logger
+        try {
+            new LogSetup("logs/" + name + "_" + System.currentTimeMillis() + ".log", logLevel);
+        } catch (IOException e) {
+            System.err.println("Logger error: " + e);
+            System.exit(1);
+            return;
+        }
+
+        // 3. Run server and respond to ctrl-c and kill
+        final KVServer kvServer = (KVServer) ObjectFactory.createKVServerObject(portNumber, name, connectionString, cacheSize, policy);
+        Runtime.getRuntime().addShutdownHook(new Thread(kvServer::close));
     }
 }

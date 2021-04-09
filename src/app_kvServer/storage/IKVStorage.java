@@ -8,7 +8,7 @@ import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 public interface IKVStorage {
-    String STORAGE_ROOT_DIRECTORY = "data";
+    public static final String STORAGE_ROOT_DIRECTORY = "data";
 
     /**
      * Check if key is in storage.
@@ -16,7 +16,7 @@ public interface IKVStorage {
      *
      * @return true if key in storage, false otherwise
      */
-    boolean inStorage(String key);
+    public boolean inStorage(String key);
 
     /**
      * Get the value associated with the key
@@ -24,39 +24,26 @@ public interface IKVStorage {
      * @return value associated with key
      * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
      */
-    String getKV(String key) throws KVServerException;
-
-    /**
-     * Gets all values associated with the regular expression
-     *
-     * @return all values associated with regular expression
-     * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
-     */
-    List<KVPair> getAllKV(Predicate<KVPair> filter) throws KVServerException;
+    public String getKV(String key) throws KVServerException;
 
     /**
      * Put the key-value pair into storage
      *
      * @throws KVServerException e.g. for {@link StatusType#PUT_ERROR}, {@link StatusType#FAILED}
      */
-    void putKV(String key, String value) throws KVServerException;
-
-    /**
-     * Put all key-value pair(s) into storage
-     */
-    List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl);
+    public void putKV(String key, String value) throws KVServerException;
 
     /**
      * Delete key-value pair from storage
      *
      * @throws KVServerException e.g. for {@link StatusType#DELETE_ERROR}, {@link StatusType#FAILED}
      */
-    void delete(String key) throws KVServerException;
+    public void delete(String key) throws KVServerException;
 
     /**
      * Clear the storage of the server
      */
-    void clearStorage();
+    public void clearStorage();
 
     /**
      * Get a stream of all {@link KVPair}s in storage which match a certain criteria.
@@ -66,12 +53,25 @@ public interface IKVStorage {
      *
      * @return {@link Stream} of {@link KVPair} (ideally lazily populated) or empty stream on error
      */
-    Stream<KVPair> openKvStream(Predicate<KVPair> filter);
+    public Stream<KVPair> openKvStream(Predicate<KVPair> filter);
+
+    /**
+     * Gets all values associated with the regular expression
+     *
+     * @return all values associated with regular expression
+     * @throws KVServerException e.g. for {@link StatusType#GET_ERROR}, {@link StatusType#FAILED}
+     */
+    public List<KVPair> getAllKV(Predicate<KVPair> filter) throws KVServerException;
+
+    /**
+     * Put all key-value pair(s) into storage
+     */
+    public List<KVPair> putAllKV(Predicate<KVPair> filter, String valExpr, String valRepl);
 
     /**
      * Batch deletion of all {@link KVPair}s in storage which match a certain criteria.
      */
-    void deleteIf(Predicate<KVPair> filter) throws KVServerException;
+    public void deleteIf(Predicate<KVPair> filter) throws KVServerException;
 
     /**
      * Container class for a key-value pair
@@ -96,6 +96,13 @@ public interface IKVStorage {
         }
 
         /**
+         * @return serialized string for KVPair
+         */
+        public String serialize() {
+            return this.tombstone.marker + this.key + KV_DELIMITER + this.value;
+        }
+
+        /**
          * @param serialized see {@link #serialize()}
          * @return deserialized instance of {@link KVPair} or null on failure
          */
@@ -107,13 +114,6 @@ public interface IKVStorage {
                     serialized.substring(1, split),
                     serialized.substring(split + 1)
             );
-        }
-
-        /**
-         * @return serialized string for KVPair
-         */
-        public String serialize() {
-            return this.tombstone.marker + this.key + KV_DELIMITER + this.value;
         }
 
         public enum Tombstone {

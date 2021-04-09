@@ -9,13 +9,13 @@ public interface KVCommInterface {
      *
      * @throws Exception if connection could not be established.
      */
-    void connect() throws Exception;
+    public void connect() throws Exception;
 
     /**
      * Disconnects the client from the storage service (i.e., the currently
      * connected server).
      */
-    void disconnect();
+    public void disconnect();
 
     /**
      * Inserts a data record into the storage service.
@@ -26,18 +26,7 @@ public interface KVCommInterface {
      * @throws Exception if put command cannot be executed
      *                   (e.g. not connected to any storage server).
      */
-    KVMessage put(String key, String value) throws Exception;
-
-    /**
-     * Updates data record in storage service which matches the keyFilter
-     *
-     * @param keyFilter - Regular expression to match key to
-     * @param valueExp  - Value expression to search for in replacement
-     * @param valueRepl - New value in update
-     * @return all updated values
-     * @throws Exception
-     */
-    KVMessage putAll(String keyFilter, String valueExp, String valueRepl) throws Exception;
+    public KVMessage put(String key, String value) throws Exception;
 
     /**
      * Retrieves a data record for a given key from the storage service.
@@ -47,23 +36,5 @@ public interface KVCommInterface {
      * @throws Exception if get command cannot be executed
      *                   (e.g. not connected to any storage server).
      */
-    KVMessage get(String key) throws Exception;
-
-    /**
-     * Retrieves all data records that match the given key filter
-     *
-     * @param keyFilter - Regular expression statement
-     * @return all KVPairs that match the keyFilter
-     * @throws Exception
-     */
-    KVMessage getAll(String keyFilter) throws Exception;
-
-    /**
-     * Deletes all data records that match the given key filter
-     *
-     * @param keyFilter - Regular expression statement
-     * @return all deleted values
-     * @throws Exception
-     */
-    KVMessage deleteAll(String keyFilter) throws Exception;
+    public KVMessage get(String key) throws Exception;
 }
