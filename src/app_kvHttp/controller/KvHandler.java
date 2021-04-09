@@ -33,7 +33,7 @@ public class KvHandler extends Handler {
     }
 
     /**
-     * /api/kv/{key}
+     * GET /api/kv/{key}
      */
     private ApiResponse executeGet(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
@@ -46,7 +46,7 @@ public class KvHandler extends Handler {
     }
 
     /**
-     * /api/kv/{key}
+     * DELETE /api/kv/{key}
      */
     private ApiResponse executeDelete(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
@@ -59,7 +59,7 @@ public class KvHandler extends Handler {
     }
 
     /**
-     * /api/kv/{key}
+     * PUT /api/kv/{key}
      */
     private ApiResponse executePut(HttpExchange exchange) throws Exception {
         final String key = PATH_PREFIX_PATTERN.matcher(exchange.getRequestURI().getPath()).replaceFirst("");
