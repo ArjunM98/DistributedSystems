@@ -49,7 +49,7 @@ Responsible for adding/removing/stopping/starting servers in your distributed da
 
 ## HTTP Server API (Executing Regex Query Expressions)
 
-Find details on the the Regex API specifications [here](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/ArjunM98/DistributedSystems/blob/main/src/app_kvHttp/resources/openapi.yaml)
+Find details on the the Regex API specifications [here](https://petstore.swagger.io/?url=https://raw.githubusercontent.com/ArjunM98/DistributedSystems/main/src/app_kvHttp/resources/openapi.yaml)
 
 ## Build/Run Instructions
 
