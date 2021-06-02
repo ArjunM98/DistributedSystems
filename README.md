@@ -5,7 +5,7 @@ The following repository contains a simple distributed key-value database
 ## Features
 
 - Load Balancing - Utilizes Consistent Hashing
-- Data Replication Mechanism - Data is lazily replicated on two other servers for every write request (Given there are 3 servers running)
+- Data Replication Mechanism - Data is lazily replicated on two other servers for every write request (Given 3 servers running)
 - Graceful Server Failure Recovery - Data is automatically recovered in the case of server crashes
 - HTTP Server - Running regex query operations for fetching/inserting/modifying key-value pairs
 
